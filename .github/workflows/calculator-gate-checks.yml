@@ -1,0 +1,50 @@
+name: Calculator Gate Checks
+
+on:
+  push:
+    branches: [feat/calculator-gate]
+  pull_request:
+    paths:
+      - 'submodules/TelegramUI/Sources/CalculatorGate/**'
+      - 'submodules/TelegramUI/Sources/AppDelegate.swift'
+      - 'Tests/CalculatorGate/**'
+      - 'tools/configure-calculator-passcode.py'
+      - '.github/workflows/calculator-gate-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-checks:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            submodules/TelegramUI/Sources/CalculatorGate
+            submodules/TelegramUI/Sources/AppDelegate.swift
+            Tests/CalculatorGate
+            tools/configure-calculator-passcode.py
+          sparse-checkout-cone-mode: false
+      - name: Check configuration generator and backup behavior
+        run: python3 -m unittest discover -s Tests/CalculatorGate -p 'test_*.py' -v
+      - name: Run production calculator model tests
+        run: |
+          set -euo pipefail
+          swiftc -warnings-as-errors \
+            submodules/TelegramUI/Sources/CalculatorGate/CalculatorModel.swift \
+            Tests/CalculatorGate/CalculatorModelTests.swift \
+            -o "$RUNNER_TEMP/calculator-model-tests"
+          "$RUNNER_TEMP/calculator-model-tests"
+      - name: Check UIKit module against installed simulator SDK
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          swiftc --version
+          swiftc -swift-version 5 -warnings-as-errors -typecheck \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -target arm64-apple-ios15.0-simulator \
+            submodules/TelegramUI/Sources/CalculatorGate/*.swift
+          swiftc -frontend -parse submodules/TelegramUI/Sources/AppDelegate.swift

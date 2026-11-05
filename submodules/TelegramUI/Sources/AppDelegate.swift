@@ -243,6 +243,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
 @objc(AppDelegate) class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate, UNUserNotificationCenterDelegate, URLSessionDelegate, URLSessionTaskDelegate {
     @objc var window: UIWindow?
+    private var calculatorGate: CalculatorGateCoordinator?
+    // 锁定期间只保留最后一个外部导航请求，避免累积 URL、通知或用户活动。
+    private var deferredCalculatorAction: (() -> Void)?
     var nativeWindow: (UIWindow & WindowHost)?
     var mainWindow: Window1!
     private var statusBarHost: ApplicationStatusBarHost?
@@ -1000,42 +1003,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, dismissNativeController: {
             self.window?.rootViewController?.dismiss(animated: true, completion: nil)
         }, getAvailableAlternateIcons: {
-            if #available(iOS 10.3, *) {
-                var icons = [
-                    PresentationAppIcon(name: "BlueIcon", imageName: "BlueIcon", isDefault: buildConfig.isAppStoreBuild),
-                    PresentationAppIcon(name: "New2", imageName: "New2"),
-                    PresentationAppIcon(name: "New1", imageName: "New1"),
-                    PresentationAppIcon(name: "BlackIcon", imageName: "BlackIcon"),
-                    PresentationAppIcon(name: "BlueClassicIcon", imageName: "BlueClassicIcon"),
-                    PresentationAppIcon(name: "BlackClassicIcon", imageName: "BlackClassicIcon"),
-                    PresentationAppIcon(name: "BlueFilledIcon", imageName: "BlueFilledIcon"),
-                    PresentationAppIcon(name: "BlackFilledIcon", imageName: "BlackFilledIcon")
-                ]
-                if buildConfig.isInternalBuild {
-                    icons.append(PresentationAppIcon(name: "WhiteFilledIcon", imageName: "WhiteFilledIcon"))
-                }
-                
-                icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
-                icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
-                icons.append(PresentationAppIcon(name: "PremiumBlack", imageName: "PremiumBlack", isPremium: true))
-                
-                return icons
-            } else {
-                return []
-            }
+            // 此构建只打包计算器主图标，不提供恢复 Telegram 图标的入口。
+            return []
         }, getAlternateIconName: {
-            if #available(iOS 10.3, *) {
-                return application.alternateIconName
-            } else {
-                return nil
-            }
-        }, requestSetAlternateIconName: { name, completion in
-            application.setAlternateIconName(name, completionHandler: { error in
-                if let error = error {
-                   Logger.shared.log("App \(self.episodeId)", "failed to set alternate icon with error \(error.localizedDescription)")
-                }
-                completion(error == nil)
-            })
+            return nil
+        }, requestSetAlternateIconName: { _, completion in
+            completion(false)
         }, forceOrientation: { orientation in
             let value = orientation.rawValue
             if #available(iOSApplicationExtension 16.0, iOS 16.0, *) {
@@ -1585,12 +1558,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 }
             }
             |> distinctUntilChanged
-            |> deliverOnMainQueue).start(next: { items in
-                if items.isEmpty {
-                    UIApplication.shared.shortcutItems = nil
-                } else {
-                    UIApplication.shared.shortcutItems = items.map({ $0.shortcutItem() })
-                }
+            |> deliverOnMainQueue).start(next: { _ in
+                // 主屏幕长按菜单也保持计算器外观。
+                UIApplication.shared.shortcutItems = nil
             }))
         }
         
@@ -1603,13 +1573,17 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         if let url = launchOptions?[.url] {
             if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
-                self.openUrlWhenReady(url: url, external: true)
+                self.performAfterCalculatorUnlock { [weak self] in
+                    self?.openUrlWhenReady(url: url, external: true)
+                }
             } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("ton:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):") || WalletContext.isTonConnectUrl(urlString), let url = URL(string: urlString) {
-                self.openUrlWhenReady(url: url, external: true)
+                self.performAfterCalculatorUnlock { [weak self] in
+                    self?.openUrlWhenReady(url: url, external: true)
+                }
             }
         }
         
-        if application.applicationState == .active {
+        if application.applicationState == .active, self.calculatorGate?.isUnlocked == true {
             self.isInForegroundValue = true
             self.isInForegroundPromise.set(true)
             self.isActiveValue = true
@@ -1817,12 +1791,27 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
 
         self.mainWindow?.updateDeviceMetrics()
-        self.window?.makeKeyAndVisible()
+        if let window = self.window {
+            // 先安装锁定窗口，再允许主内容显示，覆盖冷启动及场景重新连接。
+            self.calculatorGate = CalculatorGateCoordinator(scene: scene, contentWindow: window, keyboardWindow: { [weak self] in
+                return self?.statusBarHost?.keyboardWindow
+            }, onUnlock: { [weak self] in
+                guard let self else { return }
+                self.handleDidBecomeActive()
+                self.runForegroundTasks()
+                let action = self.deferredCalculatorAction
+                self.deferredCalculatorAction = nil
+                action?()
+            })
+        }
+        UIApplication.shared.shortcutItems = nil
 
         for context in connectionOptions.urlContexts {
             let url = context.url
             if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
-                self.openUrlWhenReady(url: url, external: true)
+                self.performAfterCalculatorUnlock { [weak self] in
+                    self?.openUrlWhenReady(url: url, external: true)
+                }
             } else {
                 self.handleOpenURL(url)
             }
@@ -2042,6 +2031,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleWillResignActive() {
+        self.calculatorGate?.lock()
         self.isActiveValue = false
         self.isActivePromise.set(false)
         self.clearNotificationsManager?.commitNow()
@@ -2069,6 +2059,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleDidEnterBackground() {
+        self.calculatorGate?.lock()
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> deliverOnMainQueue).start(next: { sharedApplicationContext in
@@ -2148,8 +2139,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleDidBecomeActive() {
+        self.calculatorGate?.didBecomeActive()
         self.isInForegroundValue = true
         self.isInForegroundPromise.set(true)
+        // 底层 AppLock 只在计算器解锁后获得 active，避免提前请求 Face ID。
+        guard self.calculatorGate?.isUnlocked == true else {
+            self.isActiveValue = false
+            self.isActivePromise.set(false)
+            return
+        }
         self.isActiveValue = true
         self.isActivePromise.set(true)
 
@@ -2620,7 +2618,22 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
     }
     
+    private func performAfterCalculatorUnlock(_ action: @escaping () -> Void) {
+        precondition(Thread.isMainThread)
+        if self.calculatorGate?.isUnlocked == true {
+            action()
+        } else {
+            self.deferredCalculatorAction = action
+        }
+    }
+
     func handleOpenURL(_ url: URL) {
+        guard self.calculatorGate?.isUnlocked == true else {
+            self.performAfterCalculatorUnlock { [weak self] in
+                self?.handleOpenURL(url)
+            }
+            return
+        }
         guard self.openUrlInProgress != url else {
             return
         }
@@ -2691,6 +2704,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     @discardableResult func handleUserActivity(_ userActivity: NSUserActivity) -> Bool {
+        guard self.calculatorGate?.isUnlocked == true else {
+            self.performAfterCalculatorUnlock { [weak self] in
+                self?.handleUserActivity(userActivity)
+            }
+            return true
+        }
         if #available(iOS 10.0, *) {
             var startCallContacts: [INPerson]?
             var isVideo = false
@@ -2858,6 +2877,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
+        guard self.calculatorGate?.isUnlocked == true else {
+            self.performAfterCalculatorUnlock { [weak self] in
+                self?.handleShortcutItem(shortcutItem, completionHandler: { _ in })
+            }
+            completionHandler(true)
+            return
+        }
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> deliverOnMainQueue).start(next: { sharedContext in
@@ -3046,18 +3072,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let _ = (accountIdFromNotification(response.notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                if let dataUrl = response.notification.request.content.userInfo["url"] as? String {
-                    if let url = URL(string: dataUrl) {
-                        self.openUrlWhenReady(accountId: accountId, url: url, external: true)
-                    }
-                } else {
-                    if let (peerId, threadId) = peerIdFromNotification(response.notification) {
-                        var messageId: MessageId? = nil
-                        if response.notification.request.content.categoryIdentifier == "c" || response.notification.request.content.categoryIdentifier == "t" {
-                            messageId = messageIdFromNotification(peerId: peerId, notification: response.notification)
+                self.performAfterCalculatorUnlock { [weak self] in
+                    guard let self else { return }
+                    if let dataUrl = response.notification.request.content.userInfo["url"] as? String {
+                        if let url = URL(string: dataUrl) {
+                            self.openUrlWhenReady(accountId: accountId, url: url, external: true)
                         }
-                        let storyId = storyIdFromNotification(peerId: peerId, notification: response.notification)
-                        self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId)
+                    } else {
+                        if let (peerId, threadId) = peerIdFromNotification(response.notification) {
+                            var messageId: MessageId? = nil
+                            if response.notification.request.content.categoryIdentifier == "c" || response.notification.request.content.categoryIdentifier == "t" {
+                                messageId = messageIdFromNotification(peerId: peerId, notification: response.notification)
+                            }
+                            let storyId = storyIdFromNotification(peerId: peerId, notification: response.notification)
+                            self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: threadId, messageId: messageId, storyId: storyId)
+                        }
                     }
                 }
                 completionHandler()

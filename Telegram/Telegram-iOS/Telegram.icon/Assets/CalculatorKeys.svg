@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024px" height="1024px" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>计算器按键</title>
+    <!-- 仅使用矢量图形，不依赖系统字体；浅色、深色图标共用同一组计算符号。 -->
+    <rect x="266" y="210" width="492" height="146" rx="28" fill="#737373"/>
+    <path d="M690 247 H714 V319 H690 Z" fill="#FFFFFF"/>
+    <rect x="266" y="392" width="224" height="188" rx="34" fill="#5A5A5A"/>
+    <rect x="534" y="392" width="224" height="188" rx="34" fill="#5A5A5A"/>
+    <rect x="266" y="616" width="224" height="188" rx="34" fill="#5A5A5A"/>
+    <rect x="534" y="616" width="224" height="188" rx="34" fill="#FF9500"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round">
+        <path d="M337 486 H419 M378 445 V527"/>
+        <path d="M605 486 H687"/>
+        <path d="M348 680 L408 740 M408 680 L348 740"/>
+        <path d="M605 690 H687 M605 730 H687"/>
+    </g>
+</svg>

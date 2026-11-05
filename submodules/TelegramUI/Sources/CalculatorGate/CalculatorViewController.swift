@@ -29,6 +29,7 @@ final class CalculatorViewController: UIViewController {
         self.displayLabel.adjustsFontSizeToFitWidth = true
         self.displayLabel.minimumScaleFactor = 0.25
         self.displayLabel.numberOfLines = 1
+        self.displayLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         self.displayLabel.accessibilityIdentifier = "calculator.display"
         self.displayLabel.accessibilityLabel = "结果"
         self.displayLabel.isAccessibilityElement = true
@@ -104,6 +105,17 @@ final class CalculatorViewController: UIViewController {
             self.displayLabel.topAnchor.constraint(greaterThanOrEqualTo: safe.topAnchor, constant: 8.0)
         ])
         self.updateDisplay()
+    }
+
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        // 横屏与分屏优先保留完整结果行，宽度自适应缩字不能解决纵向裁切。
+        let compact = self.view.safeAreaLayoutGuide.layoutFrame.height < 420.0
+        let fontSize: CGFloat = compact ? 36.0 : 68.0
+        if self.displayLabel.font.pointSize != fontSize {
+            self.displayLabel.font = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .light)
+        }
+        self.keypad.spacing = compact ? 8.0 : 12.0
     }
 
     override func viewDidLayoutSubviews() {

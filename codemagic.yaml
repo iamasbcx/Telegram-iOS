@@ -1,0 +1,55 @@
+# 手动运行计算器入口检查；完整 IPA 构建的待解决事项见 docs/codemagic.md。
+workflows:
+  calculator-checks:
+    name: Calculator Gate Checks
+    instance_type: mac_mini_m2
+    max_build_duration: 20
+    environment:
+      xcode: "27.1"
+      vars:
+        # 独立检查不依赖 Git 子模块，也不应触发 fork 的相对子模块 URL。
+        CM_RECURSIVE_SUBMODULE_INIT: "false"
+    scripts:
+      - name: Verify pinned Apple toolchain
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          versions = json.loads(Path("versions.json").read_text())
+          xcode = subprocess.check_output(["xcodebuild", "-version"], text=True).splitlines()[0].split()[1]
+          macos = subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip()
+          if xcode != versions["xcode"]:
+              raise SystemExit(f"Required Xcode {versions['xcode']}, found {xcode}")
+          if macos.split(".")[0] != versions["macos"]:
+              raise SystemExit(f"Required macOS major {versions['macos']}, found {macos}")
+          print(f"Xcode {xcode}; macOS {macos}")
+          PY
+          swiftc --version
+      - name: Check configuration generator and backup behavior
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          python3 -m unittest discover -s Tests/CalculatorGate -p 'test_*.py' -v
+      - name: Run production calculator model tests
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mkdir -p "$CM_BUILD_DIR/_杂项/codemagic"
+          swiftc -warnings-as-errors \
+            submodules/TelegramUI/Sources/CalculatorGate/CalculatorModel.swift \
+            Tests/CalculatorGate/CalculatorModelTests.swift \
+            -o "$CM_BUILD_DIR/_杂项/codemagic/calculator-model-tests"
+          "$CM_BUILD_DIR/_杂项/codemagic/calculator-model-tests"
+      - name: Check UIKit module and AppDelegate syntax
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          swiftc -swift-version 5 -warnings-as-errors -typecheck \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -target arm64-apple-ios15.0-simulator \
+            submodules/TelegramUI/Sources/CalculatorGate/*.swift
+          swiftc -frontend -parse submodules/TelegramUI/Sources/AppDelegate.swift

@@ -9,7 +9,7 @@
 3. 点击 `Start new build`，选择该分支和 **`telegram-ipa`**，开始构建。当前工作流使用仓库已有的构建配置，不需要额外填写 Apple 或 Telegram 密钥。
 4. 构建成功后，在构建页面的 **Artifacts** 下载 **`Telegram.ipa`**。同页提供 `Telegram.ipa.sha256` 和构建日志。
 
-另有 `calculator-checks` 工作流，只执行配置脚本测试、生产计算模型测试、UIKit 模块类型检查以及 `AppDelegate.swift` 语法解析，不生成 IPA。
+另有 `calculator-checks` 工作流，单独运行同一套快速检查，不生成 IPA。完整 `telegram-ipa` 也会自动先运行这些检查，失败后直接停止，不进入 Metal 预检、子模块下载和完整编译。
 
 配置没有自动触发和发布规则；运行前可检查账户的剩余额度。Codemagic 的 YAML 需要先提交到目标仓库分支才能被读取，详见[官方 YAML 文档](https://docs.codemagic.io/yaml-basic-configuration/yaml-getting-started/)。
 
@@ -24,6 +24,16 @@
 TD 的内部 CMake 构建另有限制：源码生成和目标库编译均固定两个并行任务，不调用 `sysctl` 推算核数，也不受顶层 `--jobs` 参数调整。两次配置均传入 `-DCCACHE_FOUND:BOOL=OFF`，避免 TD 在 CMake 搜索路径找到 `ccache` 后，又通过不包含其目录的 Bazel `PATH` 执行裸命令。Bazel 磁盘缓存配置保留。
 
 ## macOS 本地与其他 CI 使用
+
+快速检查的公共入口为：
+
+```sh
+bash tools/check-calculator-gate.sh
+```
+
+它无需第三方子模块，依次检查计算器回调的捕获规则、运行 Python 回归测试、编译并执行真实生产计算模型测试，再使用 `iphoneos` SDK 和 `arm64-apple-ios15.0` 目标对计算器全部 Swift 文件做类型检查，最后解析 `AppDelegate.swift` 的语法。独立 Codemagic 和 GitHub 检查均复用这个入口。
+
+捕获规则检查针对已知的计算器回调契约，`AppDelegate` 的 `-frontend -parse` 只检查语法；两者不能替代包含 Telegram 依赖和编译插件的完整模块类型检查，也不能保证完整编译不会出现其他错误。每次检查的模型二进制和日志放入独立的 `_杂项/calculator-checks/run.*/`，完整 IPA 流程同时将日志保存到 `_杂项/ipa-build/calculator-checks-*.log`。
 
 正式构建入口为 `tools/build-calculator-ipa.sh`，Codemagic 和 GitHub 可复用同一流程。在 Apple silicon Mac 上安装匹配的 Xcode、Python 3.11+、Git 和 Homebrew 后运行：
 
@@ -44,4 +54,4 @@ bash tools/build-calculator-ipa.sh --build-number 1
 
 这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。需要自己的 Telegram API 配置时按根目录 `README.md` 设置，不把模板占位符交给构建。
 
-当前已完成本地配置、Shell/Python 语法及相关单元测试检查；最新云端运行已通过 Metal 预检，编译约 31 分钟后在 TD 源码生成阶段遇到 `sysctl: command not found` 和 `ccache: command not found`。本次 TD 修复仍需在 macOS 云端重跑验证，尚无成功生成 IPA 的证据。模拟器和设备上的功能、通知、解锁及逐帧视觉验收仍需另行完成。
+最新云端运行已通过此前 Metal 和 TD 阶段，编译约 62 分钟、进度到 `9488/9577` 时，在 `AppDelegate.swift` 的三处计算器回调遇到 `ImplicitStrongCapture` 错误。本次增加构建前的捕获规则检查并统一快速检查入口，尽早拦截这类局部问题；改动仍需在 macOS 云端重跑验证，尚无成功生成 IPA 的证据。模拟器和设备上的功能、通知、解锁及逐帧视觉验收仍需另行完成。

@@ -87,6 +87,9 @@ log_dir="$repo_root/_杂项/ipa-build"
 mkdir -p "$log_dir" "$repo_root/build-input"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
+# 先检查本次入口改动，失败立即停止，避免下载依赖或长时间完整编译后才发现局部错误。
+bash tools/check-calculator-gate.sh 2>&1 | tee "$log_dir/calculator-checks-$run_id.log"
+
 # 串行编译并链接真实着色器，确认可选组件已安装且挂载可用；仅找到 metal 启动器不足以证明这一点。
 # 使用接近 Bazel action 的最小环境，预检产物归本次构建所有，不参与正式 IPA 打包。
 metal_log="$log_dir/metal-toolchain-$run_id.log"

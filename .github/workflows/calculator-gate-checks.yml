@@ -9,6 +9,8 @@ on:
       - 'submodules/TelegramUI/Sources/AppDelegate.swift'
       - 'Tests/CalculatorGate/**'
       - 'tools/configure-calculator-passcode.py'
+      - 'tools/check-calculator-gate.sh'
+      - 'tools/check-calculator-captures.py'
       - 'tools/prepare-adhoc-profiles.py'
       - 'build-system/Make/Make.py'
       - '.github/workflows/calculator-gate-checks.yml'
@@ -29,27 +31,21 @@ jobs:
             submodules/TelegramUI/Sources/AppDelegate.swift
             Tests/CalculatorGate
             tools/configure-calculator-passcode.py
+            tools/check-calculator-gate.sh
+            tools/check-calculator-captures.py
             tools/prepare-adhoc-profiles.py
             build-system/Make/Make.py
             build-system/fake-codesigning
           sparse-checkout-cone-mode: false
-      - name: Check configuration generator and backup behavior
-        run: python3 -m unittest discover -s Tests/CalculatorGate -p 'test_*.py' -v
-      - name: Run production calculator model tests
-        run: |
-          set -euo pipefail
-          swiftc -warnings-as-errors \
-            submodules/TelegramUI/Sources/CalculatorGate/CalculatorModel.swift \
-            Tests/CalculatorGate/CalculatorModelTests.swift \
-            -o "$RUNNER_TEMP/calculator-model-tests"
-          "$RUNNER_TEMP/calculator-model-tests"
-      - name: Check UIKit module against installed simulator SDK
+      - name: Run calculator quick checks
         run: |
           set -euo pipefail
           xcodebuild -version
-          swiftc --version
-          swiftc -swift-version 5 -warnings-as-errors -typecheck \
-            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-            -target arm64-apple-ios15.0-simulator \
-            submodules/TelegramUI/Sources/CalculatorGate/*.swift
-          swiftc -frontend -parse submodules/TelegramUI/Sources/AppDelegate.swift
+          bash tools/check-calculator-gate.sh
+      - name: Upload calculator check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-gate-check-logs
+          path: _杂项/calculator-checks/*/checks.log
+          if-no-files-found: warn

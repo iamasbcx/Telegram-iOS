@@ -29,31 +29,13 @@ workflows:
           print(f"Xcode {xcode}; macOS {macos}")
           PY
           swiftc --version
-      - name: Check configuration generator and backup behavior
+      - name: Run calculator quick checks
         script: |
           #!/usr/bin/env bash
           set -euo pipefail
-          python3 -m unittest discover -s Tests/CalculatorGate -p 'test_*.py' -v
-      - name: Run production calculator model tests
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-          mkdir -p "$CM_BUILD_DIR/_杂项/codemagic"
-          swiftc -warnings-as-errors \
-            submodules/TelegramUI/Sources/CalculatorGate/CalculatorModel.swift \
-            Tests/CalculatorGate/CalculatorModelTests.swift \
-            -o "$CM_BUILD_DIR/_杂项/codemagic/calculator-model-tests"
-          "$CM_BUILD_DIR/_杂项/codemagic/calculator-model-tests"
-      - name: Check UIKit module and AppDelegate syntax
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-          swiftc -swift-version 5 -warnings-as-errors -typecheck \
-            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-            -target arm64-apple-ios15.0-simulator \
-            submodules/TelegramUI/Sources/CalculatorGate/*.swift
-          swiftc -frontend -parse submodules/TelegramUI/Sources/AppDelegate.swift
-
+          bash tools/check-calculator-gate.sh
+    artifacts:
+      - _杂项/calculator-checks/*/checks.log
 
   telegram-ipa:
     name: Telegram IPA (ad-hoc signature, no Apple account)

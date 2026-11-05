@@ -1573,11 +1573,11 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         if let url = launchOptions?[.url] {
             if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
-                self.performAfterCalculatorUnlock { [weak self] in
+                self.performAfterCalculatorUnlock { [weak self = self] in
                     self?.openUrlWhenReady(url: url, external: true)
                 }
             } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("ton:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):") || WalletContext.isTonConnectUrl(urlString), let url = URL(string: urlString) {
-                self.performAfterCalculatorUnlock { [weak self] in
+                self.performAfterCalculatorUnlock { [weak self = self] in
                     self?.openUrlWhenReady(url: url, external: true)
                 }
             }
@@ -1811,7 +1811,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         for context in connectionOptions.urlContexts {
             let url = context.url
             if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
-                self.performAfterCalculatorUnlock { [weak self] in
+                self.performAfterCalculatorUnlock { [weak self = self] in
                     self?.openUrlWhenReady(url: url, external: true)
                 }
             } else {
@@ -2631,7 +2631,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
     func handleOpenURL(_ url: URL) {
         guard self.calculatorGate?.isUnlocked == true else {
-            self.performAfterCalculatorUnlock { [weak self] in
+            self.performAfterCalculatorUnlock { [weak self = self] in
                 self?.handleOpenURL(url)
             }
             return
@@ -2660,7 +2660,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         |> deliverOnMainQueue).start(next: { sharedContext, context, authContext in
             // 上下文可能在重新锁定后才准备好；最终执行点再次检查，不重复启动查询。
-            self.performAfterCalculatorUnlock { [weak self] in
+            self.performAfterCalculatorUnlock { [weak self = self] in
                 guard let self else { return }
                 if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
                     authContext.rootController.applyConfirmationCode(confirmationCode)
@@ -2711,7 +2711,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     @discardableResult func handleUserActivity(_ userActivity: NSUserActivity) -> Bool {
         guard self.calculatorGate?.isUnlocked == true else {
-            self.performAfterCalculatorUnlock { [weak self] in
+            self.performAfterCalculatorUnlock { [weak self = self] in
                 self?.handleUserActivity(userActivity)
             }
             return true
@@ -2884,7 +2884,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
         guard self.calculatorGate?.isUnlocked == true else {
-            self.performAfterCalculatorUnlock { [weak self] in
+            self.performAfterCalculatorUnlock { [weak self = self] in
                 self?.handleShortcutItem(shortcutItem, completionHandler: { _ in })
             }
             completionHandler(true)
@@ -2899,7 +2899,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 let _ = (self.context.get()
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { context in
-                    self.performAfterCalculatorUnlock { [weak self] in
+                    self.performAfterCalculatorUnlock { [weak self = self] in
                         guard let self else { return }
                         if let context = context {
                             if let type = type {
@@ -3024,7 +3024,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         |> deliverOnMainQueue
         self.walletTonConnectNotificationDisposable.set(signal.start(next: { [weak self] context, message in
             guard let self else { return }
-            self.performAfterCalculatorUnlock { [weak self] in
+            self.performAfterCalculatorUnlock { [weak self = self] in
                 guard let self else { return }
                 let isWalletAvailable = WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable
                 if isWalletAvailable, let message, let request = walletTonConnectRequestRoute(message: message, accountPeerId: context.context.account.peerId) {
@@ -3070,7 +3070,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             if self.calculatorGate?.isUnlocked != true, self.openUrlInProgress == url {
                 self.openUrlInProgress = nil
             }
-            self.performAfterCalculatorUnlock { [weak self] in
+            self.performAfterCalculatorUnlock { [weak self = self] in
                 guard let self else { return }
                 self.openUrlInProgress = url
                 if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
@@ -3102,7 +3102,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let _ = (accountIdFromNotification(response.notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                self.performAfterCalculatorUnlock { [weak self] in
+                self.performAfterCalculatorUnlock { [weak self = self] in
                     guard let self else { return }
                     if let dataUrl = response.notification.request.content.userInfo["url"] as? String {
                         if let url = URL(string: dataUrl) {

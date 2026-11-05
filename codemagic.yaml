@@ -1,4 +1,4 @@
-# 手动运行计算器入口检查；完整 IPA 构建的待解决事项见 docs/codemagic.md。
+# 手动生成使用临时签名的 IPA，或运行独立入口检查；使用说明见 docs/codemagic.md。
 workflows:
   calculator-checks:
     name: Calculator Gate Checks
@@ -53,3 +53,26 @@ workflows:
             -target arm64-apple-ios15.0-simulator \
             submodules/TelegramUI/Sources/CalculatorGate/*.swift
           swiftc -frontend -parse submodules/TelegramUI/Sources/AppDelegate.swift
+
+
+  telegram-ipa:
+    name: Telegram IPA (ad-hoc signature, no Apple account)
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    environment:
+      xcode: "27.1"
+      vars:
+        CM_RECURSIVE_SUBMODULE_INIT: "false"
+    cache:
+      cache_paths:
+        - $HOME/telegram-bazel-cache
+    scripts:
+      - name: Build and verify complete IPA
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          bash tools/build-calculator-ipa.sh --build-number "$PROJECT_BUILD_NUMBER"
+    artifacts:
+      - artifacts/Telegram.ipa
+      - artifacts/Telegram.ipa.sha256
+      - _杂项/ipa-build/*.log

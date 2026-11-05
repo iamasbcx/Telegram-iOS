@@ -9,6 +9,8 @@ on:
       - 'submodules/TelegramUI/Sources/AppDelegate.swift'
       - 'Tests/CalculatorGate/**'
       - 'tools/configure-calculator-passcode.py'
+      - 'tools/prepare-adhoc-profiles.py'
+      - 'build-system/Make/Make.py'
       - '.github/workflows/calculator-gate-checks.yml'
   workflow_dispatch:
 
@@ -27,6 +29,9 @@ jobs:
             submodules/TelegramUI/Sources/AppDelegate.swift
             Tests/CalculatorGate
             tools/configure-calculator-passcode.py
+            tools/prepare-adhoc-profiles.py
+            build-system/Make/Make.py
+            build-system/fake-codesigning
           sparse-checkout-cone-mode: false
       - name: Check configuration generator and backup behavior
         run: python3 -m unittest discover -s Tests/CalculatorGate -p 'test_*.py' -v

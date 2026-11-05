@@ -119,7 +119,8 @@ class BazelCommandLine:
         self.cache_dir = path
 
     def add_additional_args(self, additional_args):
-        self.additional_args = additional_args
+        # 参数按 argv 解析，不交给 shell；保留带空格的单个参数并拒绝未闭合引号。
+        self.additional_args = shlex.split(additional_args) if additional_args else []
 
     def set_build_number(self, build_number):
         self.build_number = build_number
@@ -262,6 +263,7 @@ class BazelCommandLine:
         if self.show_actions:
             combined_arguments += ['--subcommands']
 
+        combined_arguments += self.additional_args or []
         return combined_arguments
 
     def get_additional_build_arguments(self):
@@ -319,6 +321,8 @@ class BazelCommandLine:
             ]
 
         combined_arguments += self.configuration_args
+        # 用户参数放在配置之后，使资源限制与签名 feature 确实传递到最终构建。
+        combined_arguments += self.additional_args or []
         if self.profile_swift:
             combined_arguments += ['--config=swift_profile']
 
@@ -514,6 +518,8 @@ def generate_project(bazel, arguments):
 
     bazel_command_line.set_continue_on_error(arguments.continueOnError)
 
+    bazel_command_line.add_additional_args(arguments.bazelArguments)
+
     resolve_configuration(
         base_path=os.getcwd(),
         bazel_command_line=bazel_command_line,
@@ -614,6 +620,8 @@ def build(bazel, arguments):
         override_xcode_version=arguments.overrideXcodeVersion,
         bazel_user_root=arguments.bazelUserRoot
     )
+
+    bazel_command_line.add_additional_args(arguments.bazelArguments)
 
     if arguments.lock:
         bazel_command_line.set_lock(True)
@@ -914,7 +922,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--bazelArguments',
         required=False,
-        help='Add additional arguments to all bazel invocations.',
+        help='Add shell-quoted arguments to the app build and generated project build commands.',
         metavar='arguments'
     )
 

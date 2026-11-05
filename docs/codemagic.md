@@ -1,13 +1,15 @@
-# 在 Codemagic 运行检查
+# 在 Codemagic 生成 IPA
 
-仓库根目录的 `codemagic.yaml` 提供 `calculator-checks`。它使用 M2 和 Xcode 27.1，执行配置脚本测试、生产计算模型测试、独立 UIKit 模块类型检查以及 `AppDelegate.swift` 语法解析，与 GitHub 的 `Calculator Gate Checks` 检查范围一致。它不生成 IPA，也不替代完整 App 编译或设备验收。
+仓库根目录的 `codemagic.yaml` 提供 `telegram-ipa`：完整编译应用并导出 `Telegram.ipa`，不需要 Apple 账户、开发者证书或导入钥匙串。产物使用临时代码签名（ad-hoc），保留应用和扩展的权限声明；普通未越狱设备仍需重新签名才能安装。
 
 ## 使用步骤
 
 1. 在 [Codemagic](https://codemagic.io/signup) 注册并连接 GitHub，添加 `iamasbcx/Telegram-iOS`。
 2. 选择包含 `codemagic.yaml` 的 `feat/calculator-gate` 分支，使用 YAML 配置；若尚未识别，点击 `Check for configuration file`。
-3. 点击 `Start new build`，选择该分支和 `calculator-checks`。此工作流不需要 Apple 证书、App Store Connect 密钥或 Telegram API 密钥。
-4. 在构建页面依次检查四个步骤的日志。所有步骤通过后，只能确认所列独立检查通过，不能据此判定可安装或启动无闪现。
+3. 点击 `Start new build`，选择该分支和 **`telegram-ipa`**，开始构建。当前工作流使用仓库已有的构建配置，不需要额外填写 Apple 或 Telegram 密钥。
+4. 构建成功后，在构建页面的 **Artifacts** 下载 **`Telegram.ipa`**。同页提供 `Telegram.ipa.sha256` 和构建日志。
+
+另有 `calculator-checks` 工作流，只执行配置脚本测试、生产计算模型测试、UIKit 模块类型检查以及 `AppDelegate.swift` 语法解析，不生成 IPA。
 
 配置没有自动触发和发布规则；运行前可检查账户的剩余额度。Codemagic 的 YAML 需要先提交到目标仓库分支才能被读取，详见[官方 YAML 文档](https://docs.codemagic.io/yaml-basic-configuration/yaml-getting-started/)。
 
@@ -15,18 +17,27 @@
 
 [官方 Xcode 27.1 镜像](https://docs.codemagic.io/specs-macos/xcode-27-1/)提供 Xcode 27.1 和 macOS 27.0.1。工作流固定 `xcode: "27.1"`，并按 `versions.json` 检查实际 Xcode 和 macOS 主版本，不通过 override 绕过不一致。
 
-独立检查不需要 Bazel 或第三方子模块。配置使用官方的 [`CM_RECURSIVE_SUBMODULE_INIT=false`](https://docs.codemagic.io/yaml-basic-configuration/environment-variables/)，防止取源码时尝试克隆无关子模块。
+完整构建使用 M2、120 分钟时限及 Bazel 磁盘缓存。脚本默认限制两个并行任务、一个同类 worker，内存调度预算为 6144 MB；这不是进程硬性内存上限。首次构建需要下载依赖并完整编译，耗时和资源是否足够仍须以实际运行日志为准。
 
-## 为什么暂时没有完整 IPA 工作流
+## macOS 本地与其他 CI 使用
 
-2026-11-05 检查发现，仓库 `build-system/fake-codesigning/profiles/` 中主应用和六个扩展的描述文件均于 `2026-10-30 17:06:30 UTC` 到期：`Telegram`、`Share`、`NotificationContent`、`NotificationService`、`Intents`、`Widget`、`BroadcastUpload`。自签证书仍有效，但不能据此认为过期描述文件在当前 Xcode 下可以成功打包。本次没有运行 macOS 完整构建，因此没有添加未经确认可用的 `telegram-unsigned` 工作流。
+正式构建入口为 `tools/build-calculator-ipa.sh`，Codemagic 和 GitHub 可复用同一流程。在 Apple silicon Mac 上安装匹配的 Xcode、Python 3.11+、Git 和 Homebrew 后运行：
 
-其余已核对项如下：
+```sh
+bash tools/build-calculator-ipa.sh --help
+bash tools/build-calculator-ipa.sh --build-number 1
+```
 
-- 当前 `Make.py build` 支持 `--configurationPath`、`--codesigningInformationPath`、`--configuration=release_arm64`、`--buildNumber`；产物路径为 `bazel-bin/Telegram/Telegram.ipa`。默认不嵌入 Watch 应用；上述七个描述文件名与当前主应用和扩展目标一致。
-- `BazelLocation.py` 会下载 `versions.json` 固定的 Bazel 9.2.0，并校验 SHA-256。仓库记录值与官方 `bazel-9.2.0-darwin-arm64` 发布资产的摘要一致：`dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6`。无需依赖 Codemagic 是否预装 Bazel。
-- `.gitmodules` 的 `../rlottie.git`、`../tgcalls.git` 会在用户 fork 下解析到当前不可访问的同名仓库。完整构建需要先关闭自动递归克隆，在 CI 中执行 `git submodule sync`，再仅覆盖本地 Git 配置为 `https://github.com/TelegramMessenger/rlottie.git` 和 `https://github.com/TelegramMessenger/tgcalls.git`。固定 commit `53c9679069eb6b6513ccc3c892ef4f4a760658da` 与 `8d6dd4c61e62965cb574c29e39327a4686066381` 已分别通过上游 GitHub API 确认可达；检出并核对这两个 commit 后，再递归初始化全部依赖。本次未修改 `.gitmodules`。
+可选 `--cache-dir PATH` 指定缓存目录，`--jobs NUMBER` 调整并行任务数。默认构建号取当前 CI 构建序号，本地为 `1`。脚本固定使用 `release_arm64`，默认不嵌入 Watch 应用。生成结果在 `artifacts/`，日志在 `_杂项/ipa-build/`；重复导出前将旧 IPA 和摘要备份到 `备份/calculator-ipa-<时间戳>/`。
 
-完整工作流还需要处理过期的伪签名描述文件，验证整套依赖在云机器的内存、磁盘和时限内构建成功，再导出 IPA。使用伪签名生成的 IPA 必须重新签名才能安装到设备；个人开发者签名还需要匹配的 bundle ID、App Group、设备和扩展描述文件。使用自己的 Telegram API 配置时，按根目录 `README.md` 配置，不把模板占位符直接交给构建。
+## 构建流程与签名范围
 
-当前已完成 YAML/脚本的本地静态验证，尚未注册账户、启动 Codemagic 云构建或产生 IPA。
+- Codemagic 配置了官方的 [`CM_RECURSIVE_SUBMODULE_INIT=false`](https://docs.codemagic.io/yaml-basic-configuration/environment-variables/)。首次运行截图仍显示平台在取源码阶段尝试递归克隆，因此 `.gitmodules` 也已把 `rlottie`、`tgcalls` 改为 `TelegramMessenger` 上游绝对地址，避免依赖平台是否及时应用此变量。构建脚本同步本地 Git 配置，检出并核对固定 commit 后再递归初始化其余依赖。
+- `BazelLocation.py` 下载 `versions.json` 固定的 Bazel 9.2.0 并校验 SHA-256，不依赖预装 Bazel。M2 对应 `darwin-arm64`，仓库摘要已与官方发布资产核对。
+- `tools/prepare-adhoc-profiles.py` 以仓库公开测试材料为输入，为本次构建生成有效期内的本地描述文件。输出使用 `build-input/ipa-signing.*` 独立目录，不覆盖仓库模板，并保留 App Group 等权限字段。所需 OpenSSL 3 在缺失时通过 Homebrew 安装。
+- `Make.py` 通过 `--@build_bazel_rules_apple//apple/build_settings:signing_certificate_name=-` 使用临时代码签名；保留描述文件和签名步骤，不导入证书、不依赖 Apple 开发者身份。
+- 导出只读取 `bazel-bin/Telegram/Telegram.ipa`。脚本检查 ZIP 完整性、主应用与扩展可执行文件、临时签名标志及 App Group 权限，再复制产物并生成 SHA-256 摘要。
+
+这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。需要自己的 Telegram API 配置时按根目录 `README.md` 设置，不把模板占位符交给构建。
+
+当前只完成本地配置、Shell/Python 语法及相关单元测试检查，尚未通过云端完整构建证明 IPA 已生成。模拟器和设备上的功能、通知、解锁及逐帧视觉验收仍需另行完成。

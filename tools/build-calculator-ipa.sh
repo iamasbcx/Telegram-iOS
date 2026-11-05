@@ -87,6 +87,35 @@ log_dir="$repo_root/_杂项/ipa-build"
 mkdir -p "$log_dir" "$repo_root/build-input"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
+# 串行编译并链接真实着色器，确认可选组件已安装且挂载可用；仅找到 metal 启动器不足以证明这一点。
+# 使用接近 Bazel action 的最小环境，预检产物归本次构建所有，不参与正式 IPA 打包。
+metal_log="$log_dir/metal-toolchain-$run_id.log"
+metal_output="$repo_root/build-input/metal-preflight-$run_id"
+metal_environment=(
+  /usr/bin/env -i
+  APPLE_SDK_PLATFORM=iPhoneOS
+  "APPLE_SDK_VERSION_OVERRIDE=$(/usr/bin/xcrun --sdk iphoneos --show-sdk-version)"
+  PATH=/bin:/usr/bin:/usr/local/bin
+  ZERO_AR_DATE=1
+)
+check_metal_toolchain() {
+  "${metal_environment[@]}" /usr/bin/xcrun metal \
+    -c -target air64-apple-ios15.0 -ffast-math \
+    -o "$metal_output.air" \
+    submodules/Camera/CameraNeo/MetalResources/CameraNeo.metal || return "$?"
+  "${metal_environment[@]}" /usr/bin/xcrun metallib \
+    "$metal_output.air" -o "$metal_output.metallib" || return "$?"
+  test -s "$metal_output.air" && test -s "$metal_output.metallib"
+}
+echo "Checking Metal compilation and linking before the full build"
+if ! check_metal_toolchain 2>&1 | tee "$metal_log"; then
+  echo "Metal preflight failed; installing Metal Toolchain and retrying once" | tee -a "$metal_log"
+  xcodebuild -downloadComponent MetalToolchain 2>&1 | tee -a "$metal_log"
+  "${metal_environment[@]}" /usr/bin/xcrun --kill-cache 2>&1 | tee -a "$metal_log"
+  check_metal_toolchain 2>&1 | tee -a "$metal_log"
+fi
+echo "Metal compilation and linking passed" | tee -a "$metal_log"
+
 # 仅覆盖本地 Git 配置；必须先 sync 再覆盖，避免相对地址再次解析到用户 fork。
 git submodule sync --recursive
 git config submodule.submodules/rlottie/rlottie.url https://github.com/TelegramMessenger/rlottie.git

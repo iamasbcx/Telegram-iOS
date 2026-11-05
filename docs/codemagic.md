@@ -21,6 +21,8 @@
 
 完整构建使用 M2、120 分钟时限及 Bazel 磁盘缓存。脚本默认限制两个并行任务、一个同类 worker，内存调度预算为 6144 MB；这不是进程硬性内存上限。首次构建需要下载依赖并完整编译，耗时和资源是否足够仍须以实际运行日志为准。
 
+TD 的内部 CMake 构建另有限制：源码生成和目标库编译均固定两个并行任务，不调用 `sysctl` 推算核数，也不受顶层 `--jobs` 参数调整。两次配置均传入 `-DCCACHE_FOUND:BOOL=OFF`，避免 TD 在 CMake 搜索路径找到 `ccache` 后，又通过不包含其目录的 Bazel `PATH` 执行裸命令。Bazel 磁盘缓存配置保留。
+
 ## macOS 本地与其他 CI 使用
 
 正式构建入口为 `tools/build-calculator-ipa.sh`，Codemagic 和 GitHub 可复用同一流程。在 Apple silicon Mac 上安装匹配的 Xcode、Python 3.11+、Git 和 Homebrew 后运行：
@@ -42,4 +44,4 @@ bash tools/build-calculator-ipa.sh --build-number 1
 
 这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。需要自己的 Telegram API 配置时按根目录 `README.md` 设置，不把模板占位符交给构建。
 
-当前已完成本地配置、Shell/Python 语法及相关单元测试检查；云端已经进入完整目标编译，但此前在 Metal 组件缺失处失败。本次组件安装修复仍需在 macOS 云端重跑验证，尚无成功生成 IPA 的证据。模拟器和设备上的功能、通知、解锁及逐帧视觉验收仍需另行完成。
+当前已完成本地配置、Shell/Python 语法及相关单元测试检查；最新云端运行已通过 Metal 预检，编译约 31 分钟后在 TD 源码生成阶段遇到 `sysctl: command not found` 和 `ccache: command not found`。本次 TD 修复仍需在 macOS 云端重跑验证，尚无成功生成 IPA 的证据。模拟器和设备上的功能、通知、解锁及逐帧视觉验收仍需另行完成。

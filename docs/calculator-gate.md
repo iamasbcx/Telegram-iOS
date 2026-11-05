@@ -41,4 +41,6 @@ swiftc -warnings-as-errors submodules/TelegramUI/Sources/CalculatorGate/Calculat
 
 当前 Windows 环境没有 Xcode、模拟器或 XcodeBuildMCP，尚未完成完整 App 编译、IPA 签名、真机/模拟器运行或逐帧视觉验证。独立 CI 结果应单独核对，不能据此宣称已验证无闪现。
 
+2026-11-05 本地已通过 3 个配置生成/输入拒绝/备份测试及资源格式、补丁空白检查。首次 [GitHub 检查运行](https://github.com/iamasbcx/Telegram-iOS/actions/runs/41966329482) 在分配 runner 前被拒绝，原因为 `The job was not started because your account is locked due to a billing issue.`，没有执行 Swift 模型测试或 UIKit 编译。解决账号计费限制后，可在当前分支重新运行 `Calculator Gate Checks`；完整 App 与视觉验收仍需另外执行。
+
 名称与图标资源说明见 [calculator-branding.md](calculator-branding.md)。

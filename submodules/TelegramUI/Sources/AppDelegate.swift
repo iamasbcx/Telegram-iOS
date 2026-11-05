@@ -1793,6 +1793,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         self.mainWindow?.updateDeviceMetrics()
         if let window = self.window {
             // 先安装锁定窗口，再允许主内容显示，覆盖冷启动及场景重新连接。
+            // 旧协调器必须先释放，否则其窗口通知观察器会在新窗口获取焦点时抢回焦点。
+            self.calculatorGate = nil
             self.calculatorGate = CalculatorGateCoordinator(scene: scene, contentWindow: window, keyboardWindow: { [weak self] in
                 return self?.statusBarHost?.keyboardWindow
             }, onUnlock: { [weak self] in
@@ -2657,47 +2659,51 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         |> deliverOnMainQueue).start(next: { sharedContext, context, authContext in
-            if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
-                authContext.rootController.applyConfirmationCode(confirmationCode)
-            } else if let context = context {
-                if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
-                    self.presentWalletUnavailable(in: context)
-                } else if WalletContext.isTonConnectUrl(url.absoluteString) {
-                    context.context.walletContext?.processTonConnectUrl(url.absoluteString)
-                } else if url.scheme?.lowercased() == "ton" {
-                    if isTonTransferUrl(url), let walletContext = context.context.walletContext {
-                        context.rootController.pushViewController(WalletSendScreen(
-                            context: context.context,
-                            walletContext: walletContext,
-                            address: url.absoluteString
-                        ))
+            // 上下文可能在重新锁定后才准备好；最终执行点再次检查，不重复启动查询。
+            self.performAfterCalculatorUnlock { [weak self] in
+                guard let self else { return }
+                if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
+                    authContext.rootController.applyConfirmationCode(confirmationCode)
+                } else if let context = context {
+                    if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
+                        self.presentWalletUnavailable(in: context)
+                    } else if WalletContext.isTonConnectUrl(url.absoluteString) {
+                        context.context.walletContext?.processTonConnectUrl(url.absoluteString)
+                    } else if url.scheme?.lowercased() == "ton" {
+                        if isTonTransferUrl(url), let walletContext = context.context.walletContext {
+                            context.rootController.pushViewController(WalletSendScreen(
+                                context: context.context,
+                                walletContext: walletContext,
+                                address: url.absoluteString
+                            ))
+                        }
+                    } else {
+                        context.openUrl(url, external: true)
                     }
-                } else {
-                    context.openUrl(url, external: true)
-                }
-            } else if let authContext = authContext {
-                if let proxyData = parseProxyUrl(sharedContext: sharedContext, url: url) {
-                    authContext.rootController.view.endEditing(true)
-                    let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
-                    let controller = ProxyServerPreviewScreen(sharedContext: authContext.sharedContext, network: authContext.account.network, updatedPresentationData: (presentationData, authContext.sharedContext.presentationData), server: proxyData)
-                    authContext.rootController.currentWindow?.present(controller, on: PresentationSurfaceLevel.root, blockInteraction: false, completion: {})
-                } else if let secureIdData = parseSecureIdUrl(url) {
-                    let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
-                    
-                    let alertController = textAlertController(
-                        sharedContext: authContext.sharedContext,
-                        title: nil,
-                        text: presentationData.strings.Passport_NotLoggedInMessage,
-                        actions: [
-                            TextAlertAction(type: .genericAction, title: presentationData.strings.Calls_NotNow, action: {
-                                if let callbackUrl = URL(string: secureIdCallbackUrl(with: secureIdData.callbackUrl, peerId: secureIdData.peerId, result: .cancel, parameters: [:])) {
-                                    UIApplication.shared.open(callbackUrl, options: [:], completionHandler: nil)
-                                }
-                            }),
-                            TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
-                        ]
-                    )
-                    authContext.rootController.currentWindow?.present(alertController, on: .root, blockInteraction: false, completion: {})
+                } else if let authContext = authContext {
+                    if let proxyData = parseProxyUrl(sharedContext: sharedContext, url: url) {
+                        authContext.rootController.view.endEditing(true)
+                        let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
+                        let controller = ProxyServerPreviewScreen(sharedContext: authContext.sharedContext, network: authContext.account.network, updatedPresentationData: (presentationData, authContext.sharedContext.presentationData), server: proxyData)
+                        authContext.rootController.currentWindow?.present(controller, on: PresentationSurfaceLevel.root, blockInteraction: false, completion: {})
+                    } else if let secureIdData = parseSecureIdUrl(url) {
+                        let presentationData = authContext.sharedContext.currentPresentationData.with { $0 }
+
+                        let alertController = textAlertController(
+                            sharedContext: authContext.sharedContext,
+                            title: nil,
+                            text: presentationData.strings.Passport_NotLoggedInMessage,
+                            actions: [
+                                TextAlertAction(type: .genericAction, title: presentationData.strings.Calls_NotNow, action: {
+                                    if let callbackUrl = URL(string: secureIdCallbackUrl(with: secureIdData.callbackUrl, peerId: secureIdData.peerId, result: .cancel, parameters: [:])) {
+                                        UIApplication.shared.open(callbackUrl, options: [:], completionHandler: nil)
+                                    }
+                                }),
+                                TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
+                            ]
+                        )
+                        authContext.rootController.currentWindow?.present(alertController, on: .root, blockInteraction: false, completion: {})
+                    }
                 }
             }
         })
@@ -2893,21 +2899,24 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 let _ = (self.context.get()
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { context in
-                    if let context = context {
-                        if let type = type {
-                            switch type {
-                                case .search:
-                                    context.openRootSearch()
-                                case .compose:
-                                    context.openRootCompose()
-                                case .camera:
-                                    context.openRootCamera()
-                                case .savedMessages:
-                                    self.openChatWhenReady(accountId: nil, peerId: context.context.account.peerId, threadId: nil, storyId: nil)
-                                case .account:
-                                    context.switchAccount()
-                                case .appIcon:
-                                    context.openAppIcon()
+                    self.performAfterCalculatorUnlock { [weak self] in
+                        guard let self else { return }
+                        if let context = context {
+                            if let type = type {
+                                switch type {
+                                    case .search:
+                                        context.openRootSearch()
+                                    case .compose:
+                                        context.openRootCompose()
+                                    case .camera:
+                                        context.openRootCamera()
+                                    case .savedMessages:
+                                        self.openChatWhenReady(accountId: nil, peerId: context.context.account.peerId, threadId: nil, storyId: nil)
+                                    case .account:
+                                        context.switchAccount()
+                                    case .appIcon:
+                                        context.openAppIcon()
+                                }
                             }
                         }
                     }
@@ -2930,7 +2939,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let _ = (self.authorizedContext()
         |> take(1)
         |> deliverOnMainQueue).start(next: { context in
-            context.openNotificationSettings()
+            self.performAfterCalculatorUnlock {
+                context.openNotificationSettings()
+            }
         })
     }
     
@@ -2952,7 +2963,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.openChatWhenReadyDisposable.set((signal
         |> deliverOnMainQueue).start(next: { context in
-            context.startCall(peerId: peerId, isVideo: isVideo)
+            self.performAfterCalculatorUnlock {
+                context.startCall(peerId: peerId, isVideo: isVideo)
+            }
         }))
     }
     
@@ -2983,7 +2996,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.openChatWhenReadyDisposable.set((signal
         |> deliverOnMainQueue).start(next: { context in
-            context.openChatWithPeerId(peerId: peerId, threadId: threadId, messageId: messageId, activateInput: activateInput, storyId: storyId, openAppIfAny: openAppIfAny, alwaysKeepMessageId: alwaysKeepMessageId)
+            self.performAfterCalculatorUnlock {
+                context.openChatWithPeerId(peerId: peerId, threadId: threadId, messageId: messageId, activateInput: activateInput, storyId: storyId, openAppIfAny: openAppIfAny, alwaysKeepMessageId: alwaysKeepMessageId)
+            }
         }))
     }
     
@@ -3009,16 +3024,20 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         |> deliverOnMainQueue
         self.walletTonConnectNotificationDisposable.set(signal.start(next: { [weak self] context, message in
             guard let self else { return }
-            let isWalletAvailable = WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable
-            if isWalletAvailable, let message, let request = walletTonConnectRequestRoute(message: message, accountPeerId: context.context.account.peerId) {
-                context.context.walletContext?.openTonConnectRequest(sessionId: request.sessionId, messageId: request.messageId)
-            } else {
-                context.openChatWithPeerId(peerId: route.messageId.peerId, threadId: nil, messageId: route.messageId,
-                    activateInput: false, storyId: nil, openAppIfAny: false, alwaysKeepMessageId: route.alwaysKeepMessageId)
-                if !isWalletAvailable {
-                    self.presentWalletUnavailable(in: context)
+            self.performAfterCalculatorUnlock { [weak self] in
+                guard let self else { return }
+                let isWalletAvailable = WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable
+                if isWalletAvailable, let message, let request = walletTonConnectRequestRoute(message: message, accountPeerId: context.context.account.peerId) {
+                    context.context.walletContext?.openTonConnectRequest(sessionId: request.sessionId, messageId: request.messageId)
+                } else {
+                    context.openChatWithPeerId(peerId: route.messageId.peerId, threadId: nil, messageId: route.messageId,
+                        activateInput: false, storyId: nil, openAppIfAny: false, alwaysKeepMessageId: route.alwaysKeepMessageId)
+                    if !isWalletAvailable {
+                        self.presentWalletUnavailable(in: context)
+                    }
                 }
             }
+            // 完成解析与展示解耦；待展示请求被替换时，队列也必须结束当前项。
             self.walletTonConnectNotifications.complete()
             Queue.mainQueue().async { [weak self] in self?.openNextWalletTonConnectNotification() }
         }))
@@ -3046,25 +3065,36 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.openUrlWhenReadyDisposable.set((signal
         |> deliverOnMainQueue).start(next: { [weak self] context in
-            if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
-                self?.presentWalletUnavailable(in: context)
-            } else if WalletContext.isTonConnectUrl(url.absoluteString) {
-                context.context.walletContext?.processTonConnectUrl(url.absoluteString)
-            } else if url.scheme?.lowercased() == "ton" {
-                if isTonTransferUrl(url), let walletContext = context.context.walletContext {
-                    context.rootController.pushViewController(WalletSendScreen(
-                        context: context.context,
-                        walletContext: walletContext,
-                        address: url.absoluteString
-                    ))
-                }
-            } else {
-                context.openUrl(url, external: external)
+            guard let self else { return }
+            // 查询已经完成。若待跳转被较新的请求替换，不能留下永久的 URL 去重标记。
+            if self.calculatorGate?.isUnlocked != true, self.openUrlInProgress == url {
+                self.openUrlInProgress = nil
             }
-            
-            Queue.mainQueue().after(1.0, {
-                self?.openUrlInProgress = nil
-            })
+            self.performAfterCalculatorUnlock { [weak self] in
+                guard let self else { return }
+                self.openUrlInProgress = url
+                if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
+                    self.presentWalletUnavailable(in: context)
+                } else if WalletContext.isTonConnectUrl(url.absoluteString) {
+                    context.context.walletContext?.processTonConnectUrl(url.absoluteString)
+                } else if url.scheme?.lowercased() == "ton" {
+                    if isTonTransferUrl(url), let walletContext = context.context.walletContext {
+                        context.rootController.pushViewController(WalletSendScreen(
+                            context: context.context,
+                            walletContext: walletContext,
+                            address: url.absoluteString
+                        ))
+                    }
+                } else {
+                    context.openUrl(url, external: external)
+                }
+
+                Queue.mainQueue().after(1.0, { [weak self] in
+                    if self?.openUrlInProgress == url {
+                        self?.openUrlInProgress = nil
+                    }
+                })
+            }
         }))
     }
     

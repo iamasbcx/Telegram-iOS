@@ -2,7 +2,8 @@ import UIKit
 
 /// 主场景的计算器入口。所有接口必须在主线程调用，解锁只在本次前台会话内有效。
 /// 持有独立窗口，不替换 Telegram 的导航栈；系统通知、扩展和通话界面不由此窗口管理。
-final class CalculatorGateCoordinator {
+@MainActor
+final class CalculatorGateCoordinator: NSObject {
     private let scene: UIWindowScene
     private weak var contentWindow: UIWindow?
     private let keyboardWindow: () -> UIWindow?
@@ -10,7 +11,6 @@ final class CalculatorGateCoordinator {
     private let gateWindow: UIWindow
     private let calculator = CalculatorViewController()
     private var keyboardCalculator: CalculatorViewController?
-    private var observers: [NSObjectProtocol] = []
     private var updatingCover = false
     private var sceneIsActive = false
     private(set) var isUnlocked = false
@@ -22,6 +22,7 @@ final class CalculatorGateCoordinator {
         self.keyboardWindow = keyboardWindow
         self.onUnlock = onUnlock
         self.gateWindow = UIWindow(windowScene: scene)
+        super.init()
         // 项目使用的键盘窗口高于 app 窗口上限，因此还要单独遮住现有键盘表面。
         self.gateWindow.windowLevel = UIWindow.Level(rawValue: 10_000_000)
         self.gateWindow.backgroundColor = UIColor(white: 16.0 / 255.0, alpha: 1.0)
@@ -31,20 +32,24 @@ final class CalculatorGateCoordinator {
         }
 
         for name in [UIWindow.didBecomeVisibleNotification, UIWindow.didBecomeKeyNotification, UIResponder.keyboardDidShowNotification, UIResponder.keyboardDidHideNotification] {
-            self.observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main, using: { [weak self] _ in
-                guard let self, !self.isUnlocked else { return }
-                self.refreshCover()
-            }))
+            // UIKit 在主线程同步发布这些通知，不能异步调度遮罩，以免快照先于遮罩提交。
+            NotificationCenter.default.addObserver(self, selector: #selector(self.windowSurfaceDidChange(_:)), name: name, object: nil)
         }
         self.lock()
     }
 
     deinit {
-        for observer in self.observers {
-            NotificationCenter.default.removeObserver(observer)
+        NotificationCenter.default.removeObserver(self)
+        // 所有权只属于主线程 AppDelegate；清理键盘子视图，避免其被系统窗口继续持有。
+        MainActor.assumeIsolated {
+            self.keyboardCalculator?.view.removeFromSuperview()
+            self.gateWindow.isHidden = true
         }
-        self.keyboardCalculator?.view.removeFromSuperview()
-        self.gateWindow.isHidden = true
+    }
+
+    @objc private func windowSurfaceDidChange(_ notification: Notification) {
+        precondition(Thread.isMainThread)
+        self.refreshCover()
     }
 
     /// 失去前台时同步撤销会话，并在系统抓取切换器快照前清空输入及遮盖内容。

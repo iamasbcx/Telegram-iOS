@@ -498,6 +498,8 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
 }
 
 public final class AuthorizationSequencePaymentScreen: ViewControllerComponentContainer {
+    private let restartLogin: () -> Void
+
     public init(
         sharedContext: SharedAccountContext,
         engine: TelegramEngineUnauthorized,
@@ -511,6 +513,8 @@ public final class AuthorizationSequencePaymentScreen: ViewControllerComponentCo
         supportEmailSubject: String,
         back: @escaping () -> Void
     ) {
+        self.restartLogin = back
+
         super.init(component: AuthorizationSequencePaymentScreenComponent(
             sharedContext: sharedContext,
             engine: engine,
@@ -539,6 +543,8 @@ public final class AuthorizationSequencePaymentScreen: ViewControllerComponentCo
         self.navigationBar?.backPressed = {
             back()
         }
+        // 首个账号的收费页没有上一级导航，显式入口只重置当前未完成登录，不影响已登录账号。
+        self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: "重新登录", style: .plain, target: self, action: #selector(self.restartLoginPressed))
     }
     
     public override func loadDisplayNode() {
@@ -555,8 +561,8 @@ public final class AuthorizationSequencePaymentScreen: ViewControllerComponentCo
         super.viewWillAppear(animated)
     }
     
-    @objc private func cancelPressed() {
-        self.dismiss()
+    @objc private func restartLoginPressed() {
+        self.restartLogin()
     }
 }
 

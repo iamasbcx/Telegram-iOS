@@ -7,6 +7,7 @@ on:
     paths:
       - 'submodules/TelegramUI/Sources/CalculatorGate/**'
       - 'submodules/TelegramUI/Sources/AppDelegate.swift'
+      - 'submodules/AuthorizationUI/Sources/AuthorizationSequencePaymentScreen.swift'
       - 'Tests/CalculatorGate/**'
       - 'tools/configure-calculator-passcode.py'
       - 'tools/check-calculator-gate.sh'
@@ -29,6 +30,7 @@ jobs:
           sparse-checkout: |
             submodules/TelegramUI/Sources/CalculatorGate
             submodules/TelegramUI/Sources/AppDelegate.swift
+            submodules/AuthorizationUI/Sources/AuthorizationSequencePaymentScreen.swift
             Tests/CalculatorGate
             tools/configure-calculator-passcode.py
             tools/check-calculator-gate.sh

@@ -6,7 +6,7 @@
 
 1. 在 [Codemagic](https://codemagic.io/signup) 注册并连接 GitHub，添加 `iamasbcx/Telegram-iOS`。
 2. 选择包含 `codemagic.yaml` 的 `feat/calculator-gate` 分支，使用 YAML 配置；若尚未识别，点击 `Check for configuration file`。
-3. 点击 `Start new build`，选择该分支和 **`telegram-ipa`**，开始构建。当前工作流使用 `build-system/calculator-configuration.json`，不需要额外填写 Apple 或 Telegram 密钥。
+3. 点击 `Start new build`，选择该分支和 **`telegram-ipa`**，开始构建。当前工作流直接使用随 GitHub 同步的 `build-system/calculator-configuration.json`，其中已配置本项目用户提供的 Telegram API 凭据，无需在 Codemagic 另填环境变量；仍不需要 Apple 账户。
 4. 构建成功后，在构建页面的 **Artifacts** 下载 **`Telegram.ipa`**。同页提供 `Telegram.ipa.sha256` 和构建日志。
 
 另有 `calculator-checks` 工作流，单独运行同一套快速检查，不生成 IPA。完整 `telegram-ipa` 也会自动先运行这些检查，失败后直接停止，不进入 Metal 预检、子模块下载和完整编译。
@@ -31,7 +31,7 @@ TD 的内部 CMake 构建另有限制：源码生成和目标库编译均固定�
 bash tools/check-calculator-gate.sh
 ```
 
-它无需第三方子模块，依次检查计算器回调的捕获规则、运行 Python 回归测试、编译并执行真实生产计算模型测试，再使用 `iphoneos` SDK 和 `arm64-apple-ios15.0` 目标对计算器全部 Swift 文件做类型检查，最后解析 `AppDelegate.swift` 的语法。独立 Codemagic 和 GitHub 检查均复用这个入口。
+它无需第三方子模块，依次检查计算器回调的捕获规则、运行 Python 回归测试、编译并执行真实生产计算模型测试，再使用 `iphoneos` SDK 和 `arm64-apple-ios15.0` 目标对计算器全部 Swift 文件做类型检查，最后解析 `AppDelegate.swift` 和 `AuthorizationSequencePaymentScreen.swift` 的语法。独立 Codemagic 和 GitHub 检查均复用这个入口。
 
 捕获规则检查针对已知的计算器回调契约，`AppDelegate` 的 `-frontend -parse` 只检查语法；两者不能替代包含 Telegram 依赖和编译插件的完整模块类型检查，也不能保证完整编译不会出现其他错误。每次检查的模型二进制和日志放入独立的 `_杂项/calculator-checks/run.*/`，完整 IPA 流程同时将日志保存到 `_杂项/ipa-build/calculator-checks-*.log`。
 
@@ -53,7 +53,25 @@ bash tools/build-calculator-ipa.sh --build-number 1
 - `Make.py` 通过 `--@build_bazel_rules_apple//apple/build_settings:signing_certificate_name=-` 使用临时代码签名；保留描述文件和签名步骤，不导入证书、不依赖 Apple 开发者身份。
 - 导出只读取 `bazel-bin/Telegram/Telegram.ipa`。脚本检查 ZIP 完整性、主应用与扩展可执行文件、临时签名标志及 App Group 权限，并拒绝仍声明 iCloud/ubiquity 权限的侧载成品，再复制产物并生成 SHA-256 摘要。
 
-这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。需要自己的 Telegram API 配置时按根目录 `README.md` 设置，不把模板占位符交给构建。
+这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。其他使用者应按根目录 `README.md` 申请并配置自己的 Telegram API 凭据。
+
+## 侧载后的手机号登录
+
+2026-11-06 按用户要求，将侧载配置从仓库预置 API ID 切换为用户提供的独立 API 凭据，并随源码同步至 GitHub。`telegram-ipa` 已固定读取此文件，无需调整工作流选择的配置路径。此变更纠正构建使用的客户端身份，但尚未证明此前收费分支由原 API ID 引起，也不能保证服务端一定下发站内验证码。
+
+应用原本就支持 `auth.sentCodeTypeApp`：服务器选择此方式时，验证码发到已登录客户端的 Telegram 服务通知，新设备显示对应的验证码输入页。验证码渠道由服务器选择；本次没有强制或伪造返回类型，也没有新增二维码登录。
+
+`SMS Fee` 对应的未授权状态会保存在本地，覆盖安装后可能仍显示旧页面。收费页新增始终可见的“重新登录”按钮，调用既有返回逻辑，仅将当前未授权会话恢复为手机号输入，不删除其他已登录账号。
+
+更新验证步骤：
+
+1. 在 Codemagic 选择包含本次修改的最新提交，手动运行 `telegram-ipa`，下载本次新生成的 IPA。
+2. 在 LiveContainer 中更新应用，保留原数据容器，并保持官方 Telegram 在线。
+3. 若仍出现 `SMS Fee`，点击左上角“重新登录”，重新输入完整的 `+1` 号码。
+4. 若提示验证码已发送到 Telegram，在官方客户端查看这次请求的新验证码，输入后按需完成两步验证密码。
+5. 若再次进入收费页或提示其他验证方式，记录新页面及错误；这意味着本次新请求仍未获得站内验证码路径，需要继续查服务端响应，不能认定换 API 身份必然解决。
+
+本地 Windows 环境仅可执行配置检查、Python 回归测试和差异审阅；缺少 Xcode，未完成本次完整 IPA 编译、登录恢复页画面验收及真机登录验证。GitHub 快速检查新增该页面的 Swift 语法解析，完整类型检查仍由 Codemagic 构建执行。
 
 此前云端曾在 `AppDelegate.swift` 的三处计算器回调遇到 `ImplicitStrongCapture` 错误，构建前检查已覆盖该问题。2026-11-06 已取得版本 `13.1.2`、构建号 `5` 的实际 IPA，并确认主程序及 TelegramCoreFramework 的 UUID 与手机崩溃记录一致。该旧包启用了 iCloud，但侧载安装后的实际签名只有应用标识、开发团队、App Group 和调试权限；两次冷启动均在 CloudKit 内以 `SIGTRAP` 终止。
 

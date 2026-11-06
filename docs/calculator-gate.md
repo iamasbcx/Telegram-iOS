@@ -21,7 +21,11 @@ URL、用户活动、快捷方式和点击通知产生的导航会等到解锁�
 
 ## 构建与验证
 
-完整 App 必须使用仓库 `versions.json` 指定的工具链，当前为 Xcode 27.1、Bazel 9.2.0；签名、API ID、App Group 及 provisioning profiles 仍按根目录 README 配置。在 macOS 上初始化依赖：
+完整 App 必须使用仓库 `versions.json` 指定的工具链，当前为 Xcode 27.1、Bazel 9.2.0；签名、API ID、App Group 及 provisioning profiles 仍按根目录 README 配置。
+
+计算器侧载 IPA 使用 `build-system/calculator-configuration.json`，其中 `enable_icloud=false`。这是运行时能力开关：关闭缺少 iCloud 容器授权时会触发系统断言的 CloudKit 备用地址查询，同时不生成 iCloud 权限声明。重新签名不会自动修改已经编入二进制的开关，因此旧 IPA 必须重新完整编译后替换。详见 [Codemagic 构建说明](codemagic.md)。
+
+在 macOS 上初始化依赖：
 
 ```sh
 git submodule update --init --recursive

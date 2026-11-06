@@ -6,7 +6,7 @@
 
 1. 在 [Codemagic](https://codemagic.io/signup) 注册并连接 GitHub，添加 `iamasbcx/Telegram-iOS`。
 2. 选择包含 `codemagic.yaml` 的 `feat/calculator-gate` 分支，使用 YAML 配置；若尚未识别，点击 `Check for configuration file`。
-3. 点击 `Start new build`，选择该分支和 **`telegram-ipa`**，开始构建。当前工作流使用仓库已有的构建配置，不需要额外填写 Apple 或 Telegram 密钥。
+3. 点击 `Start new build`，选择该分支和 **`telegram-ipa`**，开始构建。当前工作流使用 `build-system/calculator-configuration.json`，不需要额外填写 Apple 或 Telegram 密钥。
 4. 构建成功后，在构建页面的 **Artifacts** 下载 **`Telegram.ipa`**。同页提供 `Telegram.ipa.sha256` 和构建日志。
 
 另有 `calculator-checks` 工作流，单独运行同一套快速检查，不生成 IPA。完整 `telegram-ipa` 也会自动先运行这些检查，失败后直接停止，不进入 Metal 预检、子模块下载和完整编译。
@@ -46,12 +46,15 @@ bash tools/build-calculator-ipa.sh --build-number 1
 
 ## 构建流程与签名范围
 
+- 计算器侧载配置将 `enable_icloud` 设为 `false`，同时关闭编译期 CloudKit 调用和应用的 iCloud 权限声明。个人账号重新签名后没有原 Telegram 的 iCloud 容器授权；若仍编入开启状态，启动时获取 CloudKit 备用机房地址会触发系统断言。普通 Telegram 网络初始化不依赖这条可选来源。原 `appstore-configuration.json` 保留给具有相应授权的原构建用途。
 - Codemagic 配置了官方的 [`CM_RECURSIVE_SUBMODULE_INIT=false`](https://docs.codemagic.io/yaml-basic-configuration/environment-variables/)。首次运行截图仍显示平台在取源码阶段尝试递归克隆，因此 `.gitmodules` 也已把 `rlottie`、`tgcalls` 改为 `TelegramMessenger` 上游绝对地址，避免依赖平台是否及时应用此变量。构建脚本同步本地 Git 配置，检出并核对固定 commit 后再递归初始化其余依赖。
 - `BazelLocation.py` 下载 `versions.json` 固定的 Bazel 9.2.0 并校验 SHA-256，不依赖预装 Bazel。M2 对应 `darwin-arm64`，仓库摘要已与官方发布资产核对。
 - `tools/prepare-adhoc-profiles.py` 以仓库公开测试材料为输入，为本次构建生成有效期内的本地描述文件。输出使用 `build-input/ipa-signing.*` 独立目录，不覆盖仓库模板，并保留 App Group 等权限字段。所需 OpenSSL 3 在缺失时通过 Homebrew 安装。
 - `Make.py` 通过 `--@build_bazel_rules_apple//apple/build_settings:signing_certificate_name=-` 使用临时代码签名；保留描述文件和签名步骤，不导入证书、不依赖 Apple 开发者身份。
-- 导出只读取 `bazel-bin/Telegram/Telegram.ipa`。脚本检查 ZIP 完整性、主应用与扩展可执行文件、临时签名标志及 App Group 权限，再复制产物并生成 SHA-256 摘要。
+- 导出只读取 `bazel-bin/Telegram/Telegram.ipa`。脚本检查 ZIP 完整性、主应用与扩展可执行文件、临时签名标志及 App Group 权限，并拒绝仍声明 iCloud/ubiquity 权限的侧载成品，再复制产物并生成 SHA-256 摘要。
 
 这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。需要自己的 Telegram API 配置时按根目录 `README.md` 设置，不把模板占位符交给构建。
 
-最新云端运行已通过此前 Metal 和 TD 阶段，编译约 62 分钟、进度到 `9488/9577` 时，在 `AppDelegate.swift` 的三处计算器回调遇到 `ImplicitStrongCapture` 错误。本次增加构建前的捕获规则检查并统一快速检查入口，尽早拦截这类局部问题；改动仍需在 macOS 云端重跑验证，尚无成功生成 IPA 的证据。模拟器和设备上的功能、通知、解锁及逐帧视觉验收仍需另行完成。
+此前云端曾在 `AppDelegate.swift` 的三处计算器回调遇到 `ImplicitStrongCapture` 错误，构建前检查已覆盖该问题。2026-11-06 已取得版本 `13.1.2`、构建号 `5` 的实际 IPA，并确认主程序及 TelegramCoreFramework 的 UUID 与手机崩溃记录一致。该旧包启用了 iCloud，但侧载安装后的实际签名只有应用标识、开发团队、App Group 和调试权限；两次冷启动均在 CloudKit 内以 `SIGTRAP` 终止。
+
+本次关闭 CloudKit 的源码修复尚未在 macOS 完整编译，也未生成修复后的 IPA。需在 Codemagic 重新运行 `telegram-ipa`，由原账号覆盖安装，并验证冷启动、计算器解锁、Telegram 登录、前后台重锁和普通消息收发。模拟器逐帧视觉验收仍需另外执行，不能用构建通过代替真机结果。

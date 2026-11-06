@@ -77,6 +77,8 @@ LiveContainer 的[官方说明](https://github.com/LiveContainer/LiveContainer)�
 
 本次修改前的文件已集中备份到工作区 `备份/Telegram-iOS-LiveContainer兼容-20261106-174023/`。更新时在 LiveContainer 内覆盖原应用并保留数据容器，验证验证码和两步验证后进入会话列表、冷启动恢复登录、收发文字/图片、相机/麦克风授权、前台通话与后台音频。本地通知单独验证；不要把无远程推送唤醒误判为登录失败。当前 Windows 工作区不能执行 iOS 编译、模拟器画面验收和这些真机检查。
 
+2026-11-06 的 Codemagic 构建号 `8` 在 `AuthorizationUI` 编译失败：两处新增 Apple 登录提示对 `NavigationController` 使用了仅由 `ViewController` 提供的 `present(_:in:)`。现改为该类已有的 `currentWindow?.present(_:on:blockInteraction:completion:)`，继续在根窗口展示提示。此错误属于类型检查，`swiftc -frontend -parse` 无法发现；本次修复仍需在 Codemagic 完整构建确认，未宣称本地 iOS 编译通过。
+
 ## 侧载后的手机号登录
 
 2026-11-06 按用户要求，将侧载配置从仓库预置 API ID 切换为用户提供的独立 API 凭据，并随源码同步至 GitHub。`telegram-ipa` 已固定读取此文件，无需调整工作流选择的配置路径。此变更纠正构建使用的客户端身份，但尚未证明此前收费分支由原 API ID 引起，也不能保证服务端一定下发站内验证码。

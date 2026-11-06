@@ -705,7 +705,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                 return
             }
             guard !BuildConfig.isContainerBuild else {
-                strongSelf.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                strongSelf.currentWindow?.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), on: .root, blockInteraction: false, completion: {})
                 return
             }
             
@@ -796,7 +796,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                 return
             }
             guard !BuildConfig.isContainerBuild else {
-                strongSelf.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                strongSelf.currentWindow?.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), on: .root, blockInteraction: false, completion: {})
                 return
             }
             

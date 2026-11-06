@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 负责无需第三方子模块的计算器入口快速检查，供独立 CI 和完整 IPA 构建复用。
-# 每次独占一个检查目录并保留日志；应用入口和登录恢复页仅做静态检查与语法解析，不声称完整类型检查。
+# 每次独占一个检查目录并保留日志；容器相关 Swift 仅做语法解析，不声称完整类型检查。
 set -euo pipefail
 
 if [ "$#" -gt 0 ]; then
@@ -30,6 +30,9 @@ run_checks() {
   echo "Checking calculator callback capture rules"
   python3 tools/check-calculator-captures.py || return "$?"
 
+  echo "Checking LiveContainer build capability policy"
+  python3 tools/sideload_build_policy.py build-system/calculator-configuration.json || return "$?"
+
   echo "Running Python configuration and regression tests"
   python3 -m unittest discover -s Tests/CalculatorGate -p 'test_*.py' -v || return "$?"
 
@@ -48,10 +51,23 @@ run_checks() {
     -target arm64-apple-ios15.0 \
     submodules/TelegramUI/Sources/CalculatorGate/*.swift || return "$?"
 
-  echo "Parsing app entry and login recovery syntax; full-module type checking remains part of the IPA build"
+  echo "Parsing container runtime and login syntax; full-module type checking remains part of the IPA build"
   xcrun swiftc -frontend -parse \
     submodules/TelegramUI/Sources/AppDelegate.swift \
-    submodules/AuthorizationUI/Sources/AuthorizationSequencePaymentScreen.swift || return "$?"
+    submodules/AuthorizationUI/Sources/AuthorizationSequencePhoneEntryController.swift \
+    submodules/AuthorizationUI/Sources/AuthorizationSequenceCodeEntryController.swift \
+    submodules/AuthorizationUI/Sources/AuthorizationSequenceController.swift \
+    submodules/AuthorizationUI/Sources/AuthorizationSequencePaymentScreen.swift \
+    submodules/TelegramIntents/Sources/TelegramIntents.swift \
+    submodules/TelegramCallsUI/Sources/CallKitIntegration.swift \
+    submodules/InAppPurchaseManager/Sources/InAppPurchaseManager.swift \
+    submodules/BotPaymentsUI/Sources/BotCheckoutControllerNode.swift \
+    submodules/TelegramCore/Sources/Authorization.swift \
+    submodules/TelegramCore/Sources/Account/Account.swift \
+    submodules/TelegramCore/Sources/Account/AccountManager.swift \
+    submodules/TelegramCore/Sources/TelegramEngine/Auth/AuthTransfer.swift \
+    "submodules/SettingsUI/Sources/Privacy and Security/LoginEmailSetupController.swift" \
+    submodules/TelegramUI/Components/Settings/PasskeysScreen/Sources/PasskeysScreen.swift || return "$?"
   echo "Calculator quick checks passed"
 }
 

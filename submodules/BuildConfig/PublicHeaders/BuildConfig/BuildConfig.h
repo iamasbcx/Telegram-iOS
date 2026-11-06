@@ -9,6 +9,9 @@
 
 @interface BuildConfig : NSObject
 
+/// 编译期容器运行契约；为真时禁用依赖独立应用身份的系统服务，不影响相机、麦克风等用户授权。
+@property (class, nonatomic, readonly) bool isContainerBuild;
+
 - (instancetype _Nonnull)initWithBaseAppBundleId:(NSString * _Nonnull)baseAppBundleId;
 
 @property (nonatomic, strong, readonly) NSString * _Nullable appCenterId;

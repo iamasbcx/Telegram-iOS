@@ -8,11 +8,30 @@ on:
       - 'submodules/TelegramUI/Sources/CalculatorGate/**'
       - 'submodules/TelegramUI/Sources/AppDelegate.swift'
       - 'submodules/AuthorizationUI/Sources/AuthorizationSequencePaymentScreen.swift'
+      - 'submodules/AuthorizationUI/Sources/AuthorizationSequencePhoneEntryController.swift'
+      - 'submodules/AuthorizationUI/Sources/AuthorizationSequenceCodeEntryController.swift'
+      - 'submodules/AuthorizationUI/Sources/AuthorizationSequenceController.swift'
+      - 'submodules/TelegramIntents/Sources/TelegramIntents.swift'
+      - 'submodules/TelegramCallsUI/Sources/CallKitIntegration.swift'
+      - 'submodules/InAppPurchaseManager/Sources/InAppPurchaseManager.swift'
+      - 'submodules/BotPaymentsUI/Sources/BotCheckoutControllerNode.swift'
+      - 'submodules/TelegramCore/Sources/Authorization.swift'
+      - 'submodules/TelegramCore/Sources/Account/Account.swift'
+      - 'submodules/TelegramCore/Sources/Account/AccountManager.swift'
+      - 'submodules/TelegramCore/Sources/TelegramEngine/Auth/AuthTransfer.swift'
+      - 'submodules/SettingsUI/Sources/Privacy and Security/LoginEmailSetupController.swift'
+      - 'submodules/TelegramUI/Components/Settings/PasskeysScreen/Sources/PasskeysScreen.swift'
       - 'Tests/CalculatorGate/**'
       - 'tools/configure-calculator-passcode.py'
       - 'tools/check-calculator-gate.sh'
       - 'tools/check-calculator-captures.py'
       - 'tools/prepare-adhoc-profiles.py'
+      - 'tools/sideload_build_policy.py'
+      - 'tools/build-calculator-ipa.sh'
+      - 'build-system/*configuration.json'
+      - 'build-system/Make/BuildConfiguration.py'
+      - 'submodules/BuildConfig/**'
+      - 'Telegram/BUILD'
       - 'build-system/Make/Make.py'
       - '.github/workflows/calculator-gate-checks.yml'
   workflow_dispatch:
@@ -31,11 +50,33 @@ jobs:
             submodules/TelegramUI/Sources/CalculatorGate
             submodules/TelegramUI/Sources/AppDelegate.swift
             submodules/AuthorizationUI/Sources/AuthorizationSequencePaymentScreen.swift
+            submodules/AuthorizationUI/Sources/AuthorizationSequencePhoneEntryController.swift
+            submodules/AuthorizationUI/Sources/AuthorizationSequenceCodeEntryController.swift
+            submodules/AuthorizationUI/Sources/AuthorizationSequenceController.swift
+            submodules/TelegramIntents/Sources/TelegramIntents.swift
+            submodules/TelegramCallsUI/Sources/CallKitIntegration.swift
+            submodules/InAppPurchaseManager/Sources/InAppPurchaseManager.swift
+            submodules/BotPaymentsUI/Sources/BotCheckoutControllerNode.swift
+            submodules/TelegramCore/Sources/Authorization.swift
+            submodules/TelegramCore/Sources/Account/Account.swift
+            submodules/TelegramCore/Sources/Account/AccountManager.swift
+            submodules/TelegramCore/Sources/TelegramEngine/Auth/AuthTransfer.swift
+            submodules/SettingsUI/Sources/Privacy and Security/LoginEmailSetupController.swift
+            submodules/TelegramUI/Components/Settings/PasskeysScreen/Sources/PasskeysScreen.swift
             Tests/CalculatorGate
             tools/configure-calculator-passcode.py
             tools/check-calculator-gate.sh
             tools/check-calculator-captures.py
             tools/prepare-adhoc-profiles.py
+            tools/sideload_build_policy.py
+            tools/build-calculator-ipa.sh
+            build-system/calculator-configuration.json
+            build-system/appstore-configuration.json
+            build-system/appcenter-configuration.json
+            build-system/template_minimal_development_configuration.json
+            build-system/Make/BuildConfiguration.py
+            submodules/BuildConfig
+            Telegram/BUILD
             build-system/Make/Make.py
             build-system/fake-codesigning
           sparse-checkout-cone-mode: false

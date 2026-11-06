@@ -963,9 +963,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 if let context = context {
                     Logger.shared.log("App \(self.episodeId)", "register for notifications initiate")
                     self.registerForNotifications(context: context.context, authorize: true, completion: completion)
+                } else {
+                    completion(false)
                 }
             })
         }, requestSiriAuthorization: { completion in
+            guard buildConfig.isSiriEnabled && !BuildConfig.isContainerBuild else {
+                completion(false)
+                return
+            }
             if #available(iOS 10, *) {
                 INPreferences.requestSiriAuthorization { status in
                     if case .authorized = status {
@@ -1078,12 +1084,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             return true
         }
 
-        let pushRegistry = PKPushRegistry(queue: .main)
-        if #available(iOS 9.0, *) {
-            pushRegistry.desiredPushTypes = Set([.voIP])
+        if !BuildConfig.isContainerBuild {
+            let pushRegistry = PKPushRegistry(queue: .main)
+            if #available(iOS 9.0, *) {
+                pushRegistry.desiredPushTypes = Set([.voIP])
+            }
+            self.pushRegistry = pushRegistry
+            pushRegistry.delegate = self
         }
-        self.pushRegistry = pushRegistry
-        pushRegistry.delegate = self
 
         self.accountManagerState = extractAccountManagerState(records: accountManager._internalAccountRecordsSync())
         let _ = (accountManager.accountRecords()
@@ -1114,7 +1122,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             })
             
             var setPresentationCall: ((PresentationCall?) -> Void)?
-            let sharedContext = SharedAccountContextImpl(mainWindow: self.mainWindow, sharedContainerPath: legacyBasePath, basePath: rootPath, encryptionParameters: encryptionParameters, accountManager: accountManager, appLockContext: appLockContext, notificationController: nil, applicationBindings: applicationBindings, initialPresentationDataAndSettings: initialPresentationDataAndSettings, networkArguments: networkArguments, hasInAppPurchases: buildConfig.isAppStoreBuild && buildConfig.apiId == 1, rootPath: rootPath, legacyBasePath: legacyBasePath, apsNotificationToken: self.notificationTokenPromise.get() |> map(Optional.init), voipNotificationToken: self.voipTokenPromise.get() |> map(Optional.init), firebaseSecretStream: self.firebaseSecretStream.get(), setNotificationCall: { call in
+            // 容器没有独立的远程推送身份；发送 nil 保持订阅完成初始化，并避免上报宿主令牌。
+            let apsNotificationToken: Signal<Data?, NoError> = BuildConfig.isContainerBuild ? .single(nil) : (self.notificationTokenPromise.get() |> map(Optional.init))
+            let voipNotificationToken: Signal<Data?, NoError> = BuildConfig.isContainerBuild ? .single(nil) : (self.voipTokenPromise.get() |> map(Optional.init))
+            let sharedContext = SharedAccountContextImpl(mainWindow: self.mainWindow, sharedContainerPath: legacyBasePath, basePath: rootPath, encryptionParameters: encryptionParameters, accountManager: accountManager, appLockContext: appLockContext, notificationController: nil, applicationBindings: applicationBindings, initialPresentationDataAndSettings: initialPresentationDataAndSettings, networkArguments: networkArguments, hasInAppPurchases: !BuildConfig.isContainerBuild && buildConfig.isAppStoreBuild && buildConfig.apiId == 1, rootPath: rootPath, legacyBasePath: legacyBasePath, apsNotificationToken: apsNotificationToken, voipNotificationToken: voipNotificationToken, firebaseSecretStream: self.firebaseSecretStream.get(), setNotificationCall: { call in
                 setPresentationCall?(call)
             }, navigateToChat: { accountId, peerId, messageId, alwaysKeepMessageId in
                 self.openChatWhenReady(accountId: accountId, peerId: peerId, threadId: nil, messageId: messageId, storyId: nil, alwaysKeepMessageId: alwaysKeepMessageId)
@@ -1658,7 +1669,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             })
         }
         
-        if #available(iOS 12.0, *) {
+        if #available(iOS 12.0, *), !BuildConfig.isContainerBuild {
             UIApplication.shared.registerForRemoteNotifications()
         }
         
@@ -2181,15 +2192,25 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         Logger.shared.log("App \(self.episodeId)", "register for notifications: didRegisterForRemoteNotificationsWithDeviceToken (deviceToken: \(hexString(deviceToken)))")
         self.notificationTokenPromise.set(.single(deviceToken))
     }
     
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         Logger.shared.log("App \(self.episodeId)", "register for notifications: didFailToRegisterForRemoteNotificationsWithError (error: \(error))")
     }
     
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable : Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard !BuildConfig.isContainerBuild else {
+            completionHandler(.noData)
+            return
+        }
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> deliverOnMainQueue).start(next: { sharedApplicationContext in
@@ -2256,6 +2277,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     public func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         if #available(iOS 9.0, *) {
             if case PKPushType.voIP = type {
                 Logger.shared.log("App \(self.episodeId)", "pushRegistry credentials: \(credentials.token as NSData)")
@@ -2266,12 +2290,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+        guard !BuildConfig.isContainerBuild else {
+            completion()
+            return
+        }
         Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry didReceiveIncomingPushWith \(payload.dictionaryPayload)")
         
         self.pushRegistryImpl(registry, didReceiveIncomingPushWith: payload, for: type, completion: completion)
     }
     
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType) {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry didReceiveIncomingPushWith \(payload.dictionaryPayload)")
         
         self.pushRegistryImpl(registry, didReceiveIncomingPushWith: payload, for: type, completion: {})
@@ -2577,6 +2608,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         Logger.shared.log("App \(self.episodeId)", "invalidated token for \(type)")
     }
     
@@ -3194,6 +3228,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func requestNotificationTokenInvalidation() {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         UIApplication.shared.unregisterForRemoteNotifications()
         DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 1.0, execute: {
             UIApplication.shared.registerForRemoteNotifications()
@@ -3271,13 +3308,16 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                                     storyReactionCategory
                                 ])
                                 
-                                Logger.shared.log("App \(self.episodeId)", "register for notifications: invoke registerForRemoteNotifications")
-                                UIApplication.shared.registerForRemoteNotifications()
+                                // 本地通知仍按用户授权工作，容器只跳过远程推送注册。
+                                if !BuildConfig.isContainerBuild {
+                                    Logger.shared.log("App \(self.episodeId)", "register for notifications: invoke registerForRemoteNotifications")
+                                    UIApplication.shared.registerForRemoteNotifications()
+                                }
                             }
                         }
                     })
                 default:
-                    break
+                    completion(false)
             }
         })
     }
@@ -3392,6 +3432,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     private func resetIntentsIfNeeded(context: AccountContextImpl) {
+        // 跳过系统操作时不能标记已重置，正常安装后仍需执行真实清理。
+        guard !BuildConfig.isContainerBuild, self.buildConfig?.isSiriEnabled == true else {
+            return
+        }
         let _ = (context.sharedContext.accountManager.transaction { transaction in
             let settings = transaction.getSharedData(ApplicationSpecificSharedDataKeys.intentsSettings)?.get(IntentsSettings.self) ?? IntentsSettings.defaultSettings
             if !settings.initiallyReset || settings.account == nil {

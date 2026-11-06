@@ -21,8 +21,14 @@ class BuildConfiguration:
         app_specific_url_scheme,
         premium_iap_product_id,
         enable_siri,
-        enable_icloud
+        enable_icloud,
+        is_container_build
     ):
+        # 容器契约必须显式声明；拒绝字符串/整数，避免错误配置被真值转换掩盖。
+        if type(is_container_build) is not bool:
+            raise ValueError('is_container_build must be a JSON boolean')
+        if is_container_build and (enable_siri is not False or enable_icloud is not False):
+            raise ValueError('Container builds must disable enable_siri and enable_icloud')
         self.bundle_id = bundle_id
         self.api_id = api_id
         self.api_hash = api_hash
@@ -35,6 +41,7 @@ class BuildConfiguration:
         self.premium_iap_product_id = premium_iap_product_id
         self.enable_siri = enable_siri
         self.enable_icloud = enable_icloud
+        self.is_container_build = is_container_build
 
     def write_to_variables_file(self, bazel_path, use_xcode_managed_codesigning, aps_environment, path):
         string = ''
@@ -53,7 +60,8 @@ class BuildConfiguration:
         string += 'telegram_aps_environment = "{}"\n'.format(aps_environment)
         string += 'telegram_enable_siri = {}\n'.format(self.enable_siri)
         string += 'telegram_enable_icloud = {}\n'.format(self.enable_icloud)
-        string += 'telegram_enable_watch = True\n'
+        string += 'telegram_is_container_build = {}\n'.format(self.is_container_build)
+        string += 'telegram_enable_watch = {}\n'.format(not self.is_container_build)
 
         if os.path.exists(path):
             os.remove(path)
@@ -79,11 +87,12 @@ def build_configuration_from_json(path):
             'app_specific_url_scheme',
             'premium_iap_product_id',
             'enable_siri',
-            'enable_icloud'
+            'enable_icloud',
+            'is_container_build'
         ]
         for key in required_keys:
             if key not in configuration_dict:
-                print('Configuration at {} does not contain {}'.format(path, key))
+                raise ValueError('Build configuration is missing required field {}'.format(key))
         return BuildConfiguration(
             bundle_id=configuration_dict['bundle_id'],
             api_id=configuration_dict['api_id'],
@@ -96,7 +105,8 @@ def build_configuration_from_json(path):
             app_specific_url_scheme=configuration_dict['app_specific_url_scheme'],
             premium_iap_product_id=configuration_dict['premium_iap_product_id'],
             enable_siri=configuration_dict['enable_siri'],
-            enable_icloud=configuration_dict['enable_icloud']
+            enable_icloud=configuration_dict['enable_icloud'],
+            is_container_build=configuration_dict['is_container_build']
         )
 
 

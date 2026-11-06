@@ -18,6 +18,7 @@ import LegacyMediaPickerUI
 import PasswordSetupUI
 import TelegramNotices
 import AuthenticationServices
+import BuildConfig
 import Markdown
 import AlertUI
 import InAppPurchaseManager
@@ -703,6 +704,10 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             guard let strongSelf = self else {
                 return
             }
+            guard !BuildConfig.isContainerBuild else {
+                strongSelf.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                return
+            }
             
             strongSelf.signInWithAppleSetup = false
             
@@ -790,6 +795,10 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             guard let strongSelf = self else {
                 return
             }
+            guard !BuildConfig.isContainerBuild else {
+                strongSelf.present(textAlertController(sharedContext: strongSelf.sharedContext, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: strongSelf.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+                return
+            }
             
             strongSelf.signInWithAppleSetup = true
             
@@ -805,7 +814,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                 authorizationController.performRequests()
             }
         }
-        controller.updateData(appleSignInAllowed: appleSignInAllowed)
+        controller.updateData(appleSignInAllowed: appleSignInAllowed && !BuildConfig.isContainerBuild)
         return controller
     }
     

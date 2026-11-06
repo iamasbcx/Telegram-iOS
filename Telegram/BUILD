@@ -58,6 +58,7 @@ load(
     "telegram_team_id",
     "telegram_enable_icloud",
     "telegram_enable_siri",
+    "telegram_is_container_build",
 )
 
 load("@build_bazel_rules_apple//apple:resources.bzl",
@@ -459,7 +460,7 @@ store_bundle_ids = [
     "ph.telegra.Telegraph",
 ]
 
-apple_pay_merchants = official_apple_pay_merchants if telegram_bundle_id == "ph.telegra.Telegraph" else []
+apple_pay_merchants = official_apple_pay_merchants if not telegram_is_container_build and telegram_bundle_id == "ph.telegra.Telegraph" else []
 
 apple_pay_merchants_fragment = "" if apple_pay_merchants == [] else """
 <key>com.apple.developer.in-app-payments</key>
@@ -474,15 +475,15 @@ official_unrestricted_voip_fragment = """
 <key>com.apple.developer.pushkit.unrestricted-voip</key>
 <true/>
 """
-unrestricted_voip_fragment = official_unrestricted_voip_fragment if telegram_bundle_id in official_bundle_ids else ""
+unrestricted_voip_fragment = official_unrestricted_voip_fragment if not telegram_is_container_build and telegram_bundle_id in official_bundle_ids else ""
 
 official_carplay_fragment = """
 <key>com.apple.developer.carplay-messaging</key>
 <true/>
 """
-carplay_fragment = official_carplay_fragment if telegram_bundle_id in official_bundle_ids else ""
+carplay_fragment = official_carplay_fragment if not telegram_is_container_build and telegram_bundle_id in official_bundle_ids else ""
 
-icloud_fragment = "" if not telegram_enable_icloud else """
+icloud_fragment = "" if telegram_is_container_build or not telegram_enable_icloud else """
 <key>com.apple.developer.icloud-services</key>
 <array>
     <string>CloudKit</string>
@@ -502,7 +503,7 @@ icloud_fragment = "" if not telegram_enable_icloud else """
     telegram_icloud_environment="Production" if telegram_aps_environment == "production" else "Development"
 )
 
-associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_ids else """
+associated_domains_fragment = "" if telegram_is_container_build or telegram_bundle_id not in official_bundle_ids else """
 <key>com.apple.developer.associated-domains</key>
 <array>
     <string>applinks:telegram.me</string>
@@ -513,12 +514,12 @@ associated_domains_fragment = "" if telegram_bundle_id not in official_bundle_id
 </array>
 """
 
-siri_fragment = "" if not telegram_enable_siri else """
+siri_fragment = "" if telegram_is_container_build or not telegram_enable_siri else """
 <key>com.apple.developer.siri</key>
 <true/>
 """
 
-aps_fragment = "" if telegram_aps_environment == "" else """
+aps_fragment = "" if telegram_is_container_build or telegram_aps_environment == "" else """
 <key>aps-environment</key>
 <string>{telegram_aps_environment}</string>
 """.format(telegram_aps_environment=telegram_aps_environment)
@@ -539,13 +540,13 @@ official_communication_notifications_fragment = """
 <key>com.apple.developer.usernotifications.communication</key>
 <true/>
 """
-communication_notifications_fragment = official_communication_notifications_fragment if telegram_bundle_id in official_bundle_ids else ""
+communication_notifications_fragment = official_communication_notifications_fragment if not telegram_is_container_build and telegram_bundle_id in official_bundle_ids else ""
 
 official_notification_filtering_fragment = """
 <key>com.apple.developer.usernotifications.filtering</key>
 <true/>
 """
-notification_filtering_fragment = official_notification_filtering_fragment if telegram_bundle_id == "ph.telegra.Telegraph" else ""
+notification_filtering_fragment = official_notification_filtering_fragment if not telegram_is_container_build and telegram_bundle_id == "ph.telegra.Telegraph" else ""
 
 store_signin_fragment = """
 <key>com.apple.developer.applesignin</key>
@@ -553,13 +554,13 @@ store_signin_fragment = """
     <string>Default</string>
 </array>
 """
-signin_fragment = store_signin_fragment if telegram_bundle_id in store_bundle_ids else ""
+signin_fragment = store_signin_fragment if not telegram_is_container_build and telegram_bundle_id in store_bundle_ids else ""
 
 official_background_gpu_fragment = """
 <key>com.apple.developer.background-tasks.continued-processing.gpu</key>
 <true/>
 """
-background_gpu_fragment = official_background_gpu_fragment if telegram_bundle_id == "ph.telegra.Telegraph" else ""
+background_gpu_fragment = official_background_gpu_fragment if not telegram_is_container_build and telegram_bundle_id == "ph.telegra.Telegraph" else ""
 
 plist_fragment(
     name = "TelegramEntitlements",
@@ -1915,7 +1916,8 @@ ios_application(
     strings = [
         ":AppStringResources",
     ],
-    extensions = select({
+    # 容器不会由系统安装扩展；此处强制空列表，避免调用方参数重新嵌入。
+    extensions = [] if telegram_is_container_build else select({
         ":disableExtensionsSetting": [],
         "//conditions:default": [
             ":ShareExtension",
@@ -1929,7 +1931,7 @@ ios_application(
     # Embed the in-repo tgwatch watch app (Telegram/WatchApp) under Watch/ only when
     # --//Telegram:embedWatchApp is set (Make.py sets it for device configs when
     # --embedWatchApp is passed). Off by default, so simulator/dev builds are unaffected.
-    watch_application = select({
+    watch_application = None if telegram_is_container_build else select({
         ":embedWatchAppSetting": ":TelegramWatchApp",
         "//conditions:default": None,
     }),

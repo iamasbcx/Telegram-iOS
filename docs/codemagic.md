@@ -1,6 +1,6 @@
 # 在 Codemagic 生成 IPA
 
-仓库根目录的 `codemagic.yaml` 提供 `telegram-ipa`：完整编译应用并导出 `Telegram.ipa`，不需要 Apple 账户、开发者证书或导入钥匙串。产物使用临时代码签名（ad-hoc），保留应用和扩展的权限声明；普通未越狱设备仍需重新签名才能安装。
+仓库根目录的 `codemagic.yaml` 提供 `telegram-ipa`：完整编译应用并导出供 LiveContainer 使用的 `Telegram.ipa`，不需要 Apple 账户、开发者证书或导入钥匙串。产物使用临时代码签名（ad-hoc），不嵌入应用扩展和 Watch 应用；普通未越狱设备直接安装仍需有效签名。
 
 ## 使用步骤
 
@@ -31,7 +31,7 @@ TD 的内部 CMake 构建另有限制：源码生成和目标库编译均固定�
 bash tools/check-calculator-gate.sh
 ```
 
-它无需第三方子模块，依次检查计算器回调的捕获规则、运行 Python 回归测试、编译并执行真实生产计算模型测试，再使用 `iphoneos` SDK 和 `arm64-apple-ios15.0` 目标对计算器全部 Swift 文件做类型检查，最后解析 `AppDelegate.swift` 和 `AuthorizationSequencePaymentScreen.swift` 的语法。独立 Codemagic 和 GitHub 检查均复用这个入口。
+它无需第三方子模块，依次检查容器配置、计算器回调的捕获规则、运行 Python 回归测试、编译并执行真实生产计算模型测试，再使用 `iphoneos` SDK 和 `arm64-apple-ios15.0` 目标对计算器全部 Swift 文件做类型检查，最后解析容器适配涉及的登录、权限、支付和设置等 Swift 文件。独立 Codemagic 和 GitHub 检查均复用这个入口。
 
 捕获规则检查针对已知的计算器回调契约，`AppDelegate` 的 `-frontend -parse` 只检查语法；两者不能替代包含 Telegram 依赖和编译插件的完整模块类型检查，也不能保证完整编译不会出现其他错误。每次检查的模型二进制和日志放入独立的 `_杂项/calculator-checks/run.*/`，完整 IPA 流程同时将日志保存到 `_杂项/ipa-build/calculator-checks-*.log`。
 
@@ -42,18 +42,40 @@ bash tools/build-calculator-ipa.sh --help
 bash tools/build-calculator-ipa.sh --build-number 1
 ```
 
-可选 `--cache-dir PATH` 指定缓存目录，`--jobs NUMBER` 调整并行任务数。默认构建号取当前 CI 构建序号，本地为 `1`。脚本固定使用 `release_arm64`，默认不嵌入 Watch 应用。生成结果在 `artifacts/`，日志在 `_杂项/ipa-build/`；重复导出前将旧 IPA 和摘要备份到 `备份/calculator-ipa-<时间戳>/`。
+可选 `--cache-dir PATH` 指定缓存目录，`--jobs NUMBER` 调整并行任务数。默认构建号取当前 CI 构建序号，本地为 `1`。脚本固定使用 `release_arm64`，容器配置强制不嵌入扩展和 Watch 应用。生成结果在 `artifacts/`，日志在 `_杂项/ipa-build/`；重复导出前将旧 IPA 和摘要备份到 `备份/calculator-ipa-<时间戳>/`。
 
 ## 构建流程与签名范围
 
-- 计算器侧载配置将 `enable_icloud` 设为 `false`，同时关闭编译期 CloudKit 调用和应用的 iCloud 权限声明。个人账号重新签名后没有原 Telegram 的 iCloud 容器授权；若仍编入开启状态，启动时获取 CloudKit 备用机房地址会触发系统断言。普通 Telegram 网络初始化不依赖这条可选来源。原 `appstore-configuration.json` 保留给具有相应授权的原构建用途。
+- 计算器侧载配置固定 `is_container_build=true`、`enable_siri=false`、`enable_icloud=false`。`BuildConfig` 将身份传给运行时，Bazel 同步省略不适用的权限及扩展；配置和产物检查会拒绝互相矛盾的设置。原 `appstore-configuration.json` 使用 `is_container_build=false`，保留具有相应授权的标准构建用途。
 - Codemagic 配置了官方的 [`CM_RECURSIVE_SUBMODULE_INIT=false`](https://docs.codemagic.io/yaml-basic-configuration/environment-variables/)。首次运行截图仍显示平台在取源码阶段尝试递归克隆，因此 `.gitmodules` 也已把 `rlottie`、`tgcalls` 改为 `TelegramMessenger` 上游绝对地址，避免依赖平台是否及时应用此变量。构建脚本同步本地 Git 配置，检出并核对固定 commit 后再递归初始化其余依赖。
 - `BazelLocation.py` 下载 `versions.json` 固定的 Bazel 9.2.0 并校验 SHA-256，不依赖预装 Bazel。M2 对应 `darwin-arm64`，仓库摘要已与官方发布资产核对。
 - `tools/prepare-adhoc-profiles.py` 以仓库公开测试材料为输入，为本次构建生成有效期内的本地描述文件。输出使用 `build-input/ipa-signing.*` 独立目录，不覆盖仓库模板，并保留 App Group 等权限字段。所需 OpenSSL 3 在缺失时通过 Homebrew 安装。
 - `Make.py` 通过 `--@build_bazel_rules_apple//apple/build_settings:signing_certificate_name=-` 使用临时代码签名；保留描述文件和签名步骤，不导入证书、不依赖 Apple 开发者身份。
-- 导出只读取 `bazel-bin/Telegram/Telegram.ipa`。脚本检查 ZIP 完整性、主应用与扩展可执行文件、临时签名标志及 App Group 权限，并拒绝仍声明 iCloud/ubiquity 权限的侧载成品，再复制产物并生成 SHA-256 摘要。
+- 导出只读取 `bazel-bin/Telegram/Telegram.ipa`。脚本检查 ZIP 完整性、主应用可执行文件、临时签名标志及 App Group 权限；容器成品若仍包含扩展、Watch 应用或受禁止的权限声明，检查直接失败，再由通过检查的产物生成 SHA-256 摘要。
 
-这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；重签时仍需匹配应用和扩展的 bundle ID、App Group、设备及描述文件。其他使用者应按根目录 `README.md` 申请并配置自己的 Telegram API 凭据。
+这里的 ad-hoc 是 `codesign` 的临时签名，**不是 Apple 开发者的 Ad Hoc 分发授权**。生成 IPA 与在普通设备安装是两个步骤；直接安装时仍需匹配应用的 bundle ID、App Group、设备及描述文件。其他使用者应按根目录 `README.md` 申请并配置自己的 Telegram API 凭据。
+
+## LiveContainer 运行契约
+
+用户提供的崩溃发生在验证码及两步验证之后：`INPreferences` 因进程缺少 `com.apple.developer.siri` 抛出异常。仅在 IPA 中添加 entitlement 无法给宿主进程增加权限；本配置在调用系统服务前明确禁用无法使用的入口。身份来自编译配置，不使用私有 entitlement 查询 API，也不猜测 LiveContainer 的环境变量。
+
+| 范围 | 容器构建行为 |
+| --- | --- |
+| Siri / Intents | 跳过授权查询/请求、启动时清理与聊天/通话 donation，保留正常通话流程。 |
+| iCloud | 关闭 CloudKit 备用地址及登录令牌的云端读写；本地令牌仍保存。 |
+| 远程推送 | 不注册 APNs/PushKit、不接收或上报宿主 token；初始化信号显式返回 `nil`。不能依赖远程推送唤醒应用。 |
+| 本地通知 | 保留通知授权、类别和本地通知；LiveContainer 中按需打开 `Fix Local Notifications`。这不恢复 APNs。 |
+| 通行密钥 / Apple 登录 | 禁用自动和手动 passkey 登录、创建 passkey 以及 Apple ID 认证；保留已有 passkey 查看/服务器撤销、手机号/验证码/两步验证、邮箱验证码。 |
+| App Store 内购 | 不启动商品请求或支付队列观察，不购买、恢复、完成交易或读取宿主收据；`SMS Fee` 按钮显示说明，保留“重新登录”和 Help。 |
+| Apple Pay | 不探测或展示 Apple Pay，不创建系统支付请求；保留普通银行卡及网页支付。 |
+| 扩展与其他身份权限 | 不嵌入分享、通知、Widget、Intents、Watch 等客体扩展；不声明 associated domains、通知通信/过滤、CarPlay、Apple Pay、Apple Sign In、特殊 VoIP 和后台 GPU 权限。 |
+| 数据与常规功能 | 保留 App Group、Keychain、原数据路径，以及相机/麦克风/照片授权、普通聊天和通话代码；不迁移或清空已有登录数据。 |
+
+LiveContainer 的[官方说明](https://github.com/LiveContainer/LiveContainer)及[兼容性文档](https://livecontainer.github.io/docs/faq)是容器限制的依据。普通相机/麦克风等权限由宿主管理；功能仍受宿主签名、系统版本和 LiveContainer 实现影响。以上为本次源码策略，不代表全部功能已在设备上验证。
+
+`tools/sideload_build_policy.py` 是构建前及导出时使用的正式校验器；Python 测试覆盖配置契约和成品权限/布局拒绝规则。本次在 Windows 执行全部 31 项 Python 测试，28 项通过、3 项因目录符号链接/OpenSSL 集成环境未配置而跳过；捕获检查、配置策略及 Bash 语法检查通过。快速 Swift 语法检查不能验证链接、Bazel 依赖或实机权限，仍须执行完整 `telegram-ipa`。
+
+本次修改前的文件已集中备份到工作区 `备份/Telegram-iOS-LiveContainer兼容-20261106-174023/`。更新时在 LiveContainer 内覆盖原应用并保留数据容器，验证验证码和两步验证后进入会话列表、冷启动恢复登录、收发文字/图片、相机/麦克风授权、前台通话与后台音频。本地通知单独验证；不要把无远程推送唤醒误判为登录失败。当前 Windows 工作区不能执行 iOS 编译、模拟器画面验收和这些真机检查。
 
 ## 侧载后的手机号登录
 
@@ -75,4 +97,4 @@ bash tools/build-calculator-ipa.sh --build-number 1
 
 此前云端曾在 `AppDelegate.swift` 的三处计算器回调遇到 `ImplicitStrongCapture` 错误，构建前检查已覆盖该问题。2026-11-06 已取得版本 `13.1.2`、构建号 `5` 的实际 IPA，并确认主程序及 TelegramCoreFramework 的 UUID 与手机崩溃记录一致。该旧包启用了 iCloud，但侧载安装后的实际签名只有应用标识、开发团队、App Group 和调试权限；两次冷启动均在 CloudKit 内以 `SIGTRAP` 终止。
 
-本次关闭 CloudKit 的源码修复尚未在 macOS 完整编译，也未生成修复后的 IPA。需在 Codemagic 重新运行 `telegram-ipa`，由原账号覆盖安装，并验证冷启动、计算器解锁、Telegram 登录、前后台重锁和普通消息收发。模拟器逐帧视觉验收仍需另外执行，不能用构建通过代替真机结果。
+用户后续报告的新日志已进入验证码及两步验证后的 `INPreferences` 崩溃。本次容器修复尚未在 macOS 完整编译，也未生成新的 IPA；需在 Codemagic 重新运行 `telegram-ipa`，在 LiveContainer 内覆盖安装并按上述步骤验证。模拟器逐帧视觉验收仍需另外执行，不能用构建通过代替真机结果。

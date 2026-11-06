@@ -13,6 +13,7 @@ import PhoneNumberFormat
 import DebugSettingsUI
 import MessageUI
 import AuthenticationServices
+import BuildConfig
 
 public final class AuthorizationSequencePhoneEntryController: ViewController, MFMailComposeViewControllerDelegate, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     private var controllerNode: AuthorizationSequencePhoneEntryControllerNode {
@@ -204,6 +205,12 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
     }
     
     private func loadAndPresentPasskey(force: Bool) {
+        guard !BuildConfig.isContainerBuild else {
+            if force {
+                self.present(textAlertController(sharedContext: self.sharedContext, title: nil, text: "LiveContainer 中无法使用系统通行密钥，请通过手机号和验证码登录。", actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+            }
+            return
+        }
         if #available(iOS 16.0, *) {
             Task { @MainActor [weak self] in
                 guard let self, let account = self.account else {

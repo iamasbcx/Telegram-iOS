@@ -14,6 +14,7 @@ import ButtonComponent
 import AccountContext
 import AuthenticationServices
 import PresentationDataUtils
+import BuildConfig
 
 final class PasskeysScreenComponent: Component {
     typealias EnvironmentType = ViewControllerComponentContainer.Environment
@@ -117,6 +118,12 @@ final class PasskeysScreenComponent: Component {
         }
 
         private func createPasskey() {
+            guard !BuildConfig.isContainerBuild else {
+                if let component = self.component, let environment = self.environment, let controller = environment.controller() {
+                    controller.present(textAlertController(context: component.context, title: nil, text: "LiveContainer 中无法创建系统通行密钥。你仍可查看和撤销已有通行密钥，请在官方 Telegram 客户端中创建。", actions: [TextAlertAction(type: .defaultAction, title: environment.strings.Common_OK, action: {})]), in: .window(.root))
+                }
+                return
+            }
             if #available(iOS 15.0, *) {
                 Task { @MainActor [weak self] in
                     guard let self, let component = self.component else {
@@ -212,7 +219,8 @@ final class PasskeysScreenComponent: Component {
             component.passkeysDataUpdated(self.passkeysData ?? [])
             self.state?.updated(transition: .spring(duration: 0.4))
             
-            if #available(iOS 26.0, *) {
+            // 服务器端撤销始终保留；容器不访问宿主的系统凭据更新接口。
+            if #available(iOS 26.0, *), !BuildConfig.isContainerBuild {
                 Task { @MainActor in
                     let updater = ASCredentialUpdater()
                     let decodeBase64: (String) -> Data? = { string in

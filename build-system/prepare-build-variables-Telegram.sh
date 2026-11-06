@@ -65,6 +65,7 @@ prepare_build_variables () {
 	echo "telegram_app_center_id = \"$APP_CENTER_ID\"" >> "$VARIABLES_PATH"
 	echo "telegram_is_internal_build = \"$IS_INTERNAL_BUILD\"" >> "$VARIABLES_PATH"
 	echo "telegram_is_appstore_build = \"$IS_APPSTORE_BUILD\"" >> "$VARIABLES_PATH"
+	echo "telegram_is_container_build = False" >> "$VARIABLES_PATH"
 	echo "telegram_appstore_id = \"$APPSTORE_ID\"" >> "$VARIABLES_PATH"
 	echo "telegram_app_specific_url_scheme = \"$APP_SPECIFIC_URL_SCHEME\"" >> "$VARIABLES_PATH"
 	echo "telegram_premium_iap_product_id = \"$PREMIUM_IAP_PRODUCT_ID\"" >> "$VARIABLES_PATH"

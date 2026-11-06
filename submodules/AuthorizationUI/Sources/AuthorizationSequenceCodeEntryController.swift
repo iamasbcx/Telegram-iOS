@@ -8,6 +8,7 @@ import TelegramPresentationData
 import PresentationDataUtils
 import ProgressNavigationButtonNode
 import AccountContext
+import BuildConfig
 
 public final class AuthorizationSequenceCodeEntryController: ViewController {
     private var controllerNode: AuthorizationSequenceCodeEntryControllerNode {
@@ -142,7 +143,7 @@ public final class AuthorizationSequenceCodeEntryController: ViewController {
         if let (number, email, codeType, nextType, timeout, previousCodeType, isPrevious) = self.data {
             var appleSignInAllowed = false
             if case let .email(_, _, _, _, appleSignInAllowedValue, _) = codeType {
-                appleSignInAllowed = appleSignInAllowedValue
+                appleSignInAllowed = appleSignInAllowedValue && !BuildConfig.isContainerBuild
             }
             self.controllerNode.updateData(number: number, email: email, codeType: codeType, nextType: nextType, timeout: timeout, appleSignInAllowed: appleSignInAllowed, previousCodeType: previousCodeType, isPrevious: isPrevious)
         }
@@ -199,7 +200,7 @@ public final class AuthorizationSequenceCodeEntryController: ViewController {
                         
             var appleSignInAllowed = false
             if case let .email(_, _, _, _, appleSignInAllowedValue, _) = codeType {
-                appleSignInAllowed = appleSignInAllowedValue
+                appleSignInAllowed = appleSignInAllowedValue && !BuildConfig.isContainerBuild
             }
             
             if self.isNodeLoaded {

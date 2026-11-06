@@ -1,4 +1,5 @@
 import Foundation
+import BuildConfig
 import CoreLocation
 import SwiftSignalKit
 import StoreKit
@@ -267,22 +268,30 @@ public final class InAppPurchaseManager: NSObject {
                 
         super.init()
         
-        SKPaymentQueue.default().add(self)
-        self.requestProducts()
+        // 容器进程的商店身份属于宿主，不能接收或完成宿主的交易。
+        if !BuildConfig.isContainerBuild {
+            SKPaymentQueue.default().add(self)
+            self.requestProducts()
+        }
     }
     
     deinit {
         self.productRequestTimeoutTimer?.invalidate()
         self.productRequestRetryTimer?.invalidate()
         self.productRequest?.cancel()
-        SKPaymentQueue.default().remove(self)
+        if !BuildConfig.isContainerBuild {
+            SKPaymentQueue.default().remove(self)
+        }
     }
     
     var canMakePayments: Bool {
-        return SKPaymentQueue.canMakePayments()
+        return !BuildConfig.isContainerBuild && SKPaymentQueue.canMakePayments()
     }
     
     private func requestProducts() {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         Queue.mainQueue().async { [weak self] in
             guard let self, self.products.isEmpty, self.productRequest == nil, self.productRequestRetryTimer == nil else {
                 return
@@ -325,11 +334,20 @@ public final class InAppPurchaseManager: NSObject {
     }
     
     public var availableProducts: Signal<[Product], NoError> {
+        if BuildConfig.isContainerBuild {
+            return .single([])
+        }
         self.requestProducts()
         return self.productsPromise.get()
     }
     
     public func restorePurchases(completion: @escaping (RestoreState) -> Void) {
+        guard !BuildConfig.isContainerBuild else {
+            Queue.mainQueue().async {
+                completion(.failed)
+            }
+            return
+        }
         Logger.shared.log("InAppPurchaseManager", "Restoring purchases")
         self.onRestoreCompletion = completion
         
@@ -338,6 +356,9 @@ public final class InAppPurchaseManager: NSObject {
     }
     
     public func finishAllTransactions() {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         Logger.shared.log("InAppPurchaseManager", "Finishing all transactions")
         
         let paymentQueue = SKPaymentQueue.default()
@@ -348,6 +369,9 @@ public final class InAppPurchaseManager: NSObject {
     }
     
     public func buyProduct(_ product: Product, quantity: Int32 = 1, purpose: AppStoreTransactionPurpose, reportPending: Bool = false) -> Signal<PurchaseState, PurchaseError> {
+        guard !BuildConfig.isContainerBuild else {
+            return .fail(.cantMakePayments)
+        }
         let accountPeerId: String
         switch self.engine {
         case let .authorized(engine):
@@ -621,6 +645,9 @@ extension InAppPurchaseManager: SKProductsRequestDelegate {
 }
 
 private func getReceiptData() -> Data? {
+    guard !BuildConfig.isContainerBuild else {
+        return nil
+    }
     var receiptData: Data?
     if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL, FileManager.default.fileExists(atPath: appStoreReceiptURL.path) {
         do {
@@ -634,6 +661,9 @@ private func getReceiptData() -> Data? {
 
 extension InAppPurchaseManager: SKPaymentTransactionObserver {
     public func paymentQueue(_ queue: SKPaymentQueue, updatedTransactions transactions: [SKPaymentTransaction]) {
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         self.stateQueue.async { [self] in
             let accountPeerId: String
             switch self.engine {

@@ -9,6 +9,7 @@ import PresentationDataUtils
 import AuthorizationUI
 import AuthenticationServices
 import UndoUI
+import BuildConfig
 
 final class LoginEmailSetupDelegate: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     var authorizationCompletion: ((Any) -> Void)?
@@ -155,6 +156,10 @@ public func loginEmailSetupController(context: AccountContext, blocking: Bool, e
         })
     }
     emailController.signInWithApple = { [weak emailController] in
+        guard !BuildConfig.isContainerBuild else {
+            emailController?.present(textAlertController(context: context, title: nil, text: "LiveContainer 中无法使用 Apple 登录，请使用邮箱验证码继续。", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+            return
+        }
         if #available(iOS 13.0, *) {
             let appleIdProvider = ASAuthorizationAppleIDProvider()
             let request = appleIdProvider.createRequest()
@@ -207,7 +212,7 @@ public func loginEmailSetupController(context: AccountContext, blocking: Bool, e
             }
         }
     }
-    emailController.updateData(appleSignInAllowed: true)
+    emailController.updateData(appleSignInAllowed: !BuildConfig.isContainerBuild)
     presentControllerImpl = { [weak emailController] c in
         emailController?.present(c, in: .window(.root), with: nil)
     }

@@ -59,7 +59,7 @@ fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
-# 侧载重签不提供原 Telegram 的 iCloud 容器权限，必须同时关闭编译期 CloudKit 路径。
+# 容器运行不具有独立应用的系统身份，配置与成品均须通过同一能力策略。
 build_configuration="$repo_root/build-system/calculator-configuration.json"
 for tool in git python3 xcodebuild xcrun security codesign ditto brew; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -73,12 +73,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path("tools").resolve()))
+from sideload_build_policy import check_configuration_file
+
 if sys.version_info < (3, 11):
     raise SystemExit("Python 3.11 or newer is required")
-with open(sys.argv[1], encoding="utf-8") as configuration_file:
-    configuration = json.load(configuration_file)
-if configuration.get("enable_icloud") is not False:
-    raise SystemExit("Calculator sideload builds must disable enable_icloud before compilation")
+check_configuration_file(Path(sys.argv[1]))
 versions = json.loads(Path("versions.json").read_text())
 xcode = subprocess.check_output(["xcodebuild", "-version"], text=True).splitlines()[0].split()[1]
 macos = subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip()
@@ -179,11 +179,15 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
 import zipfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path("tools").resolve()))
+from sideload_build_policy import validate_container_archive_members, validate_container_entitlements
 
 source = Path("bazel-bin/Telegram/Telegram.ipa")
 if not source.is_file() or source.stat().st_size == 0:
@@ -192,6 +196,7 @@ with zipfile.ZipFile(source) as archive:
     bad_file = archive.testzip()
     if bad_file:
         raise SystemExit(f"IPA ZIP integrity check failed: {bad_file}")
+    validate_container_archive_members(archive.namelist())
 
 expected_entitlements = {}
 for profile in (Path(os.environ["TELEGRAM_ADHOC_PROFILES_DIR"]) / "profiles").glob("*.mobileprovision"):
@@ -220,9 +225,8 @@ with tempfile.TemporaryDirectory(prefix="telegram-ipa-") as staging:
         signed = subprocess.check_output(["codesign", "--display", "--entitlements", ":-", str(bundle)])
         entitlements = plistlib.loads(signed)
         bundle_id = info["CFBundleIdentifier"]
-        # 描述文件模板允许的权限不应自动进入侧载成品；拒绝发布仍声明 iCloud 的包。
-        if any(key.startswith(("com.apple.developer.icloud-", "com.apple.developer.ubiquity-")) for key in entitlements):
-            raise SystemExit(f"Unexpected iCloud entitlement in calculator sideload build: {bundle_id}")
+        # 描述文件模板的授权范围不代表容器能力；按实际签名权限拒绝不支持的成品。
+        validate_container_entitlements(entitlements)
         if bundle_id not in expected_entitlements:
             raise SystemExit(f"No expected profile for {bundle_id}")
         expected = expected_entitlements[bundle_id]

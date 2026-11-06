@@ -9,6 +9,7 @@ import AppBundle
 import AccountContext
 import TelegramAudio
 import TelegramVoip
+import BuildConfig
 
 private let sharedProviderDelegate: CallKitProviderDelegate? = {
     return CallKitProviderDelegate()
@@ -96,6 +97,10 @@ public final class CallKitIntegration {
     }
     
     private func donateIntent(peerId: EnginePeer.Id, displayTitle: String, localContactId: String?) {
+        // 只关闭容器内的 Siri 建议记录，保留 CallKit 通话和音频会话。
+        guard !BuildConfig.isContainerBuild else {
+            return
+        }
         let handle = INPersonHandle(value: "tg\(peerId.id._internalGetInt64Value())", type: .unknown)
         let contact = INPerson(personHandle: handle, nameComponents: nil, displayName: displayTitle, image: nil, contactIdentifier: localContactId, customIdentifier: "tg\(peerId.id._internalGetInt64Value())")
     

@@ -20,6 +20,7 @@ import OverlayStatusController
 import CheckNode
 import TextFormat
 import Markdown
+import BuildConfig
 
 final class BotCheckoutControllerArguments {
     fileprivate let account: Account
@@ -449,7 +450,8 @@ private func botCheckoutControllerEntries(presentationData: PresentationData, st
     return entries
 }
 
-private let hasApplePaySupport: Bool = PKPaymentAuthorizationViewController.canMakePayments(usingNetworks: [.visa, .masterCard, .amex])
+// 容器没有独立的 Apple Pay 商户授权；设备已添加银行卡不能代表当前应用具备支付能力。
+private let hasApplePaySupport: Bool = !BuildConfig.isContainerBuild && PKPaymentAuthorizationViewController.canMakePayments(usingNetworks: [.visa, .masterCard, .amex])
 
 private func formSupportApplePay(_ paymentForm: BotPaymentForm) -> Bool {
     if !hasApplePaySupport {
@@ -493,7 +495,7 @@ private func availablePaymentMethods(form: BotPaymentForm, current: BotCheckoutP
     if !form.additionalPaymentMethods.isEmpty {
         methods.append(contentsOf: form.additionalPaymentMethods.map { .other($0) })
     }
-    if let current = current {
+    if let current = current, !(BuildConfig.isContainerBuild && current == .applePay) {
         if !methods.contains(current) {
             methods.insert(current, at: hasApplePay ? 1 : 0)
         }
@@ -1378,6 +1380,10 @@ final class BotCheckoutControllerNode: ItemListControllerNode, PKPaymentAuthoriz
                 case let .webToken(token):
                     credentials = .generic(data: token.data, saveOnServer: token.saveOnServer)
                 case .applePay:
+                    guard !BuildConfig.isContainerBuild else {
+                        self.present(textAlertController(context: self.context, title: nil, text: "LiveContainer 中无法使用 Apple Pay，请选择其他付款方式。", actions: [TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: {})]), nil)
+                        return
+                    }
                     guard let paymentForm = self.paymentFormValue, let nativeProvider = paymentForm.nativeProvider else {
                         return
                     }

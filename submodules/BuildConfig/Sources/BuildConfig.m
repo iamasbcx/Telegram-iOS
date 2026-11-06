@@ -98,6 +98,10 @@ API_AVAILABLE(ios(10))
 
 @implementation BuildConfig
 
++ (bool)isContainerBuild {
+    return APP_CONFIG_IS_CONTAINER_BUILD;
+}
+
 + (NSString *)bundleId {
     NSDictionary *query = [NSDictionary dictionaryWithObjectsAndKeys:
         (__bridge NSString *)kSecClassGenericPassword, (__bridge NSString *)kSecClass,
@@ -196,11 +200,11 @@ API_AVAILABLE(ios(10))
 }
 
 - (bool)isICloudEnabled {
-    return APP_CONFIG_IS_ICLOUD_ENABLED;
+    return APP_CONFIG_IS_ICLOUD_ENABLED && ![BuildConfig isContainerBuild];
 }
 
 - (bool)isSiriEnabled {
-    return APP_CONFIG_IS_SIRI_ENABLED;
+    return APP_CONFIG_IS_SIRI_ENABLED && ![BuildConfig isContainerBuild];
 }
 
 + (NSString * _Nullable)bundleSeedId {

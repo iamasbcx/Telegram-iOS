@@ -81,7 +81,8 @@ public enum SendAuthorizationCodeResult {
     case loggedIn
 }
 
-func storeFutureLoginToken(accountManager: AccountManager<TelegramAccountManagerTypes>, token: Data) {
+// 令牌始终保存到本地；仅在当前账户启用 iCloud 时访问云端存储，避免无授权环境触发系统调用。
+func storeFutureLoginToken(accountManager: AccountManager<TelegramAccountManagerTypes>, token: Data, allowCloudSync: Bool) {
     let _ = (accountManager.transaction { transaction -> Void in
         var tokens = transaction.getStoredLoginTokens()
         
@@ -90,7 +91,7 @@ func storeFutureLoginToken(accountManager: AccountManager<TelegramAccountManager
         #endif
         
         var cloudValue: [Data] = []
-        if let list = NSUbiquitousKeyValueStore.default.object(forKey: "T_SLTokens") as? [String] {
+        if allowCloudSync, let list = NSUbiquitousKeyValueStore.default.object(forKey: "T_SLTokens") as? [String] {
             cloudValue = list.compactMap { string -> Data? in
                 guard let stringData = string.data(using: .utf8) else {
                     return nil
@@ -108,8 +109,10 @@ func storeFutureLoginToken(accountManager: AccountManager<TelegramAccountManager
             tokens.removeLast(tokens.count - 20)
         }
         
-        NSUbiquitousKeyValueStore.default.set(tokens.map { $0.base64EncodedString() }, forKey: "T_SLTokens")
-        NSUbiquitousKeyValueStore.default.synchronize()
+        if allowCloudSync {
+            NSUbiquitousKeyValueStore.default.set(tokens.map { $0.base64EncodedString() }, forKey: "T_SLTokens")
+            NSUbiquitousKeyValueStore.default.synchronize()
+        }
         
         transaction.setStoredLoginTokens(tokens)
     }).start()
@@ -143,7 +146,7 @@ func sendFirebaseAuthorizationCode(network: Network, phoneNumber: String, apiId:
 
 public func sendAuthorizationCode(accountManager: AccountManager<TelegramAccountManagerTypes>, account: UnauthorizedAccount, phoneNumber: String, apiId: Int32, apiHash: String, pushNotificationConfiguration: AuthorizationCodePushNotificationConfiguration?, firebaseSecretStream: Signal<[String: String], NoError>, syncContacts: Bool, disableAuthTokens: Bool = false, forcedPasswordSetupNotice: @escaping (Int32) -> (NoticeEntryKey, CodableEntry)?) -> Signal<SendAuthorizationCodeResult, AuthorizationCodeRequestError> {
     var cloudValue: [Data] = []
-    if let list = NSUbiquitousKeyValueStore.default.object(forKey: "T_SLTokens") as? [String] {
+    if account.networkArguments.isICloudEnabled, let list = NSUbiquitousKeyValueStore.default.object(forKey: "T_SLTokens") as? [String] {
         cloudValue = list.compactMap { string -> Data? in
             guard let stringData = string.data(using: .utf8) else {
                 return nil
@@ -368,7 +371,7 @@ public func sendAuthorizationCode(accountManager: AccountManager<TelegramAccount
                         case let .authorization(authorizationData):
                             let (otherwiseReloginDays, futureAuthToken, apiUser) = (authorizationData.otherwiseReloginDays, authorizationData.futureAuthToken, authorizationData.user)
                             if let futureAuthToken = futureAuthToken {
-                                storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                                storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                             }
 
                             let user = TelegramUser(user: apiUser)
@@ -1092,7 +1095,7 @@ public func authorizeWithCode(accountManager: AccountManager<TelegramAccountMana
                                     case let .authorization(authorizationData):
                                         let (otherwiseReloginDays, futureAuthToken, apiUser) = (authorizationData.otherwiseReloginDays, authorizationData.futureAuthToken, authorizationData.user)
                                         if let futureAuthToken = futureAuthToken {
-                                            storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                                            storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                                         }
 
                                         let user = TelegramUser(user: apiUser)
@@ -1162,7 +1165,7 @@ public func authorizeWithPassword(accountManager: AccountManager<TelegramAccount
             case let .authorization(authorizationData):
                 let (futureAuthToken, apiUser) = (authorizationData.futureAuthToken, authorizationData.user)
                 if let futureAuthToken = futureAuthToken {
-                    storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                    storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                 }
 
                 let user = TelegramUser(user: apiUser)
@@ -1291,7 +1294,7 @@ public func authorizeWithPasskey(accountManager: AccountManager<TelegramAccountM
                 case let .authorization(authorizationData):
                     let (otherwiseReloginDays, futureAuthToken, apiUser) = (authorizationData.otherwiseReloginDays, authorizationData.futureAuthToken, authorizationData.user)
                     if let futureAuthToken = futureAuthToken {
-                        storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                        storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                     }
 
                     let user = TelegramUser(user: apiUser)
@@ -1358,7 +1361,7 @@ public func loginWithRecoveredAccountData(accountManager: AccountManager<Telegra
         case let .authorization(authorizationData):
             let (futureAuthToken, apiUser) = (authorizationData.futureAuthToken, authorizationData.user)
             if let futureAuthToken = futureAuthToken {
-                storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
             }
 
             let user = TelegramUser(user: apiUser)
@@ -1515,7 +1518,7 @@ public func signUpWithName(accountManager: AccountManager<TelegramAccountManager
                 case let .authorization(authorizationData):
                     let (otherwiseReloginDays, futureAuthToken, apiUser) = (authorizationData.otherwiseReloginDays, authorizationData.futureAuthToken, authorizationData.user)
                     if let futureAuthToken = futureAuthToken {
-                        storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                        storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                     }
 
                     let user = TelegramUser(user: apiUser)

@@ -13,3 +13,4 @@ telegram_aps_environment = "production"
 telegram_enable_siri = True
 telegram_enable_icloud = True
 telegram_enable_watch = True
+telegram_is_container_build = False

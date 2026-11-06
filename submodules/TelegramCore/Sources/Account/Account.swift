@@ -146,7 +146,7 @@ public class UnauthorizedAccount {
                         }
 
                         if let futureAuthToken = futureAuthToken {
-                            storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                            storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: networkArguments.isICloudEnabled)
                         }
 
                         let user = TelegramUser(user: apiUser)

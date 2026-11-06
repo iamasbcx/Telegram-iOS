@@ -100,7 +100,7 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
                         case let .authorization(authorizationData):
                             let (futureAuthToken, apiUser) = (authorizationData.futureAuthToken, authorizationData.user)
                             if let futureAuthToken = futureAuthToken {
-                                storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                                storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: updatedAccount.networkArguments.isICloudEnabled)
                             }
 
                             return updatedAccount.postbox.transaction { transaction -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in
@@ -130,7 +130,7 @@ func _internal_exportAuthTransferToken(accountManager: AccountManager<TelegramAc
             case let .authorization(authorizationData):
                 let (futureAuthToken, apiUser) = (authorizationData.futureAuthToken, authorizationData.user)
                 if let futureAuthToken = futureAuthToken {
-                    storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                    storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                 }
 
                 return account.postbox.transaction { transaction -> Signal<ExportAuthTransferTokenResult, ExportAuthTransferTokenError> in

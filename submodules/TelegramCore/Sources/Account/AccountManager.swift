@@ -514,7 +514,7 @@ private func cleanupAccount(networkArguments: NetworkInitializationArguments, ac
                     case let .loggedOut(loggedOutData):
                         let futureAuthToken = loggedOutData.futureAuthToken
                         if let futureAuthToken = futureAuthToken {
-                            storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData())
+                            storeFutureLoginToken(accountManager: accountManager, token: futureAuthToken.makeData(), allowCloudSync: account.networkArguments.isICloudEnabled)
                         }
                     default:
                         break

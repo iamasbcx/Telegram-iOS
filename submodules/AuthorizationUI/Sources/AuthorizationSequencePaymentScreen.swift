@@ -1,4 +1,5 @@
 import Foundation
+import BuildConfig
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -111,6 +112,19 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
         }
         
         private func proceed() {
+            if BuildConfig.isContainerBuild {
+                guard let component = self.component, let controller = self.environment?.controller() else {
+                    return
+                }
+                let theme = AlertControllerTheme(presentationData: component.presentationData)
+                controller.present(textAlertController(
+                    alertContext: AlertControllerContext(theme: theme, themeSignal: .single(theme)),
+                    title: "无法在此环境内购买",
+                    text: "当前运行环境不支持 Telegram 的 App Store 内购。可以点左上角“重新登录”重新请求验证码；验证码发送方式由 Telegram 决定。如果仍要求付费，请使用官方客户端处理，或点 Help 联系 Telegram。",
+                    actions: [TextAlertAction(type: .defaultAction, title: component.presentationData.strings.Common_OK, action: {})]
+                ), in: .window(.root))
+                return
+            }
             guard let component = self.component, let storeProduct = self.products.first(where: { $0.id == component.storeProduct }), !self.inProgress else {
                 return
             }
@@ -432,9 +446,11 @@ final class AuthorizationSequencePaymentScreenComponent: Component {
                 priceString = "–"
             }
             
-            let buttonString = environment.strings.Login_Fee_SignUp(priceString).string
+            let buttonString = BuildConfig.isContainerBuild ? "查看登录说明" : environment.strings.Login_Fee_SignUp(priceString).string
             let buttonSubtitle: String
-            if component.premiumDays == 7 {
+            if BuildConfig.isContainerBuild {
+                buttonSubtitle = "此环境不支持 App Store 内购"
+            } else if component.premiumDays == 7 {
                 buttonSubtitle = environment.strings.Login_Fee_GetPremiumForAWeek
             } else if component.premiumDays > 0 {
                 let daysString = environment.strings.Login_Fee_GetPremiumForDays_Days(component.premiumDays)
